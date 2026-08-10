@@ -7,10 +7,9 @@ against a local DuckDB database (`dev.duckdb`).
 ### Setup
 
 Dependencies (`dbt-core`, `dbt-duckdb`) are installed into the `.venv`
-virtual environment one level up from this project:
+virtual environment in the project root:
 
 ```bash
-cd ..
 .venv/bin/pip install -r requirements.txt
 ```
 
@@ -22,14 +21,14 @@ The dbt connection profile lives in this project directory
 commands from here:
 
 ```bash
-../.venv/bin/dbt debug --profiles-dir .
+.venv/bin/dbt debug --profiles-dir .
 ```
 
 ### Using the starter project
 
 Try running the following commands (from this directory):
-- `../.venv/bin/dbt run --profiles-dir .`
-- `../.venv/bin/dbt test --profiles-dir .`
+- `.venv/bin/dbt run --profiles-dir .`
+- `.venv/bin/dbt test --profiles-dir .`
 
 ### Project structure
 
