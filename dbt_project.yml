@@ -26,3 +26,6 @@ models:
   sample_project:
     staging:
       +materialized: view
+    queries:
+      +materialized: view
+      +schema: analytics
