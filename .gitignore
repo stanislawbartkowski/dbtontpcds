@@ -8,3 +8,5 @@ dbt_internal_packages/
 profiles.yml
 *.duckdb
 .user.yml
+metastore_db/
+spark-warehouse/
