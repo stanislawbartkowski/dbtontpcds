@@ -21,14 +21,14 @@ The dbt connection profile lives in this project directory
 commands from here:
 
 ```bash
-.venv/bin/dbt debug --profiles-dir .
+.venv/bin/dbt debug
 ```
 
 ### Using the starter project
 
 Try running the following commands (from this directory):
-- `.venv/bin/dbt run --profiles-dir .`
-- `.venv/bin/dbt test --profiles-dir .`
+- `.venv/bin/dbt run`
+- `.venv/bin/dbt test`
 
 ### Project structure
 
@@ -151,6 +151,104 @@ these before executing so all 99 query templates run as-is:
   column that doesn't exist in the TPC-DS DDL)
 - bare aliases that collide with DuckDB keywords (`returns`, `at`) get
   quoted (query_77, query_90)
+
+### Examples
+```bash
+dbt show --inline "select * from analytics.query_1"
+
+ dbt show --inline "select * from {{ref('analytics.query_1') }} "
+ ```
+
+
+## Spark Connect
+
+Spark lives at `/opt/spark` (`$SPARK_HOME`). The default log/pid directory
+(`/opt/spark/logs`) isn't writable, so point `SPARK_LOG_DIR`/`SPARK_PID_DIR`
+at a writable location (e.g. `~/spark-logs`, `~/spark-pid`) when starting or
+stopping the server.
+
+### 1) Start the Spark Connect server
+
+```bash
+SPARK_LOG_DIR=~/spark-logs SPARK_PID_DIR=~/spark-pid \
+  $SPARK_HOME/sbin/start-connect-server.sh \
+  --packages org.apache.spark:spark-connect_2.13:4.2.0
+```
+
+The server listens on `sc://localhost:15002`; the Spark UI is at
+http://localhost:4040.
+
+To stop it:
+
+```bash
+SPARK_LOG_DIR=~/spark-logs SPARK_PID_DIR=~/spark-pid \
+  $SPARK_HOME/sbin/stop-connect-server.sh
+```
+
+### 2) Create the raw schema
+
+Use `scripts/create_raw_schema_spark.py` to create the 25 TPC-DS tables in a
+`tpc_raw` database on the Spark Connect server, from the same `tpcds.sql` DDL
+used to set up the DuckDB `raw` schema:
+
+```bash
+.venv/bin/python scripts/create_raw_schema_spark.py <tpcds_sql_path> [spark_remote_url]
+```
+
+- `<tpcds_sql_path>` (required) — path to `tpcds.sql`, e.g.
+  `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql`
+- `[spark_remote_url]` (optional) — Spark Connect remote URL, defaults to
+  `sc://localhost:15002`
+
+Example:
+
+```bash
+.venv/bin/python scripts/create_raw_schema_spark.py /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql
+```
+
+The script adapts the DDL for Spark's default (parquet-backed) managed
+tables: it drops the `primary key (...)` constraint clauses, which aren't
+supported on those tables, and maps the `time` column type to `string`,
+since parquet can't persist Spark's `TIME` type. Table names are qualified
+into `tpc_raw` and created with `IF NOT EXISTS`, so it's safe to re-run.
+
+### 3) Load the raw data
+
+Use `scripts/load_raw_data_spark.py` to load the same `.dat` files used for
+`scripts/load_raw_data.sh` into the `tpc_raw` tables created above:
+
+```bash
+.venv/bin/python scripts/load_raw_data_spark.py <dat_directory> [spark_remote_url]
+```
+
+- `<dat_directory>` (required) — directory containing the `.dat` files, e.g.
+  `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
+- `[spark_remote_url]` (optional) — Spark Connect remote URL, defaults to
+  `sc://localhost:15002`
+
+Example:
+
+```bash
+.venv/bin/python scripts/load_raw_data_spark.py /home/dbt/tpc/DSGen-software-code-4.0.0/dat
+```
+
+For each table, the script reads its schema back from Spark's catalog (so
+column names, types, and order always match what
+`scripts/create_raw_schema_spark.py` created) and overwrites the table's
+contents from the matching `.dat` file, so it is safe to re-run.
+
+### Connect
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
+spark.sql("select 1").show()
+```
+
+```bash
+$SPARK_HOME/bin/spark-connect-shell --remote sc://localhost:15002
+```
 
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
