@@ -88,6 +88,36 @@ Example:
 The script `TRUNCATE`s each `raw` table before copying in the matching
 `.dat` file, so it is safe to re-run to refresh the data.
 
+## Running TPC-DS queries
+
+Use `scripts/run_query.sh` to run one of the TPC-DS query templates
+(`queries/query_1.sql`, `queries/query_2.sql`, etc.) against `dev.duckdb`:
+
+```bash
+./scripts/run_query.sh <query_file.sql> [duckdb_path]
+```
+
+- `<query_file.sql>` (required) — path to the TPC-DS query file, e.g.
+  `/home/dbt/tpc/DSGen-software-code-4.0.0/queries/query_1.sql`
+- `[duckdb_path]` (optional) — target `.duckdb` file, defaults to
+  `dev.duckdb` in the project root
+
+Example:
+
+```bash
+./scripts/run_query.sh /home/dbt/tpc/DSGen-software-code-4.0.0/queries/query_1.sql
+```
+
+The TPC-DS query templates use a few SQL Server-isms and have a couple of
+known template bugs that DuckDB doesn't accept as-is. The script rewrites
+these before executing so all 99 query templates run as-is:
+- `select top n` → `select ... limit n`
+- `<date-expr> +/- n days` → `<date-expr> +/- INTERVAL n days`
+- `c_last_review_date_sk` → `c_last_review_date` (query_30 references a
+  column that doesn't exist in the TPC-DS DDL)
+- bare aliases that collide with DuckDB keywords (`returns`, `at`) get
+  quoted (query_77, query_90)
+
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
 - Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
