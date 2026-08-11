@@ -2,8 +2,8 @@ version: 2
 
 sources:
   - name: raw_data
-    schema: raw
-    database: dev
+    schema: "{{ 'tpc_raw' if target.type == 'spark' else 'raw' }}"
+    database: "{{ 'dev' if target.type == 'duckdb' else '' }}"
     tables:
       - name: call_center
       - name: catalog_page
