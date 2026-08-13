@@ -178,6 +178,17 @@ SPARK_LOG_DIR=~/spark-logs SPARK_PID_DIR=~/spark-pid \
 The server listens on `sc://localhost:15002`; the Spark UI is at
 http://localhost:4040.
 
+Persistent warehouse
+
+```bash
+SPARK_LOG_DIR=~/spark-logs SPARK_PID_DIR=~/spark-pid \
+  $SPARK_HOME/sbin/start-connect-server.sh \
+  --packages org.apache.spark:spark-connect_2.13:4.2.0 \
+  --conf spark.sql.warehouse.dir=$HOME/spark-warehouse \
+  --conf spark.sql.catalogImplementation=hive \
+  --conf spark.hadoop.javax.jdo.option.ConnectionURL="jdbc:derby:;databaseName=$HOME/spark-metastore_db;create=true"
+```
+
 To stop it:
 
 ```bash
