@@ -18,7 +18,15 @@ virtual environment in the project root:
 The dbt connection profile lives in this project directory
 (`profiles.yml`), not in the default `~/.dbt/profiles.yml`, so pass
 `--profiles-dir .` (or `export DBT_PROFILES_DIR=$(pwd)`) when running dbt
-commands from here:
+commands from here. `profiles.yml` is gitignored (the `dev_postgres` and
+`dev_db2` targets carry credentials), so start from the checked-in
+template:
+
+```bash
+cp profile_template.yml profiles.yml
+```
+
+Then verify a target connects:
 
 ```bash
 .venv/bin/dbt debug

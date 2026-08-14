@@ -1,0 +1,44 @@
+# Template for profiles.yml, which is gitignored because the postgres/db2
+# targets below carry credentials. Copy this file to profiles.yml (already
+# in .gitignore) and adjust host/user/password for your environment:
+#
+#   cp profile_template.yml profiles.yml
+#
+# The dev_duckdb and dev_spark targets need no setup beyond what's in the
+# README's "Spark Connect" section. The dev_postgres and dev_db2 targets
+# need a database/role created first - see the README's "Postgres" and
+# "Db2" sections.
+
+sample_project:
+  outputs:
+    dev_duckdb:
+      type: duckdb
+      path: dev.duckdb
+      threads: 4
+    dev_spark:
+      type: spark
+      method: session
+      host: localhost
+      schema: default
+      threads: 4
+      server_side_parameters:
+        spark.remote: "sc://localhost:15002"
+    dev_postgres:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: tpc
+      password: secret
+      dbname: tpc_data
+      schema: public
+      threads: 4
+    dev_db2:
+      type: ibmdb2
+      host: localhost
+      port: 25000
+      database: TPC_DATA
+      user: tpc
+      password: secret
+      schema: TPC
+      threads: 4
+  target: dev_duckdb
