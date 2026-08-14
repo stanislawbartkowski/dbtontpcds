@@ -304,10 +304,36 @@ psql -h localhost -U tpc -d tpc_data < /tmp/load_raw_postgres.sql
 Replace `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql` with the
 location valid in your environment. Run this once to set up the 25
 TPC-DS tables (`call_center`, `customer`, `store_sales`, `web_sales`,
-etc.) empty in the `raw` schema — loading data into them follows the same
-pattern as `scripts/load_raw_data.sh` (DuckDB) and
-`scripts/load_raw_data_spark.py` (Spark), which don't yet have a
-Postgres equivalent.
+etc.) empty in the `raw` schema.
+
+### Load the raw data
+
+Use `scripts/load_raw_data_postgres.sh` to load the same `.dat` files used
+for `scripts/load_raw_data.sh` (DuckDB) and `scripts/load_raw_data_spark.py`
+(Spark) into the `raw` tables created above:
+
+```bash
+./scripts/load_raw_data_postgres.sh <dat_directory> [psql_arg ...]
+```
+
+- `<dat_directory>` (required) — directory containing the `.dat` files,
+  e.g. `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
+- `[psql_arg ...]` (optional) — connection arguments passed through to
+  `psql`, defaulting to `-h localhost -U tpc -d tpc_data` (the
+  `dev_postgres` profile target); the script also honors `PGPASSWORD` if
+  already set, otherwise defaults it to `secret`
+
+Example:
+
+```bash
+./scripts/load_raw_data_postgres.sh /home/dbt/tpc/DSGen-software-code-4.0.0/dat
+```
+
+The `.dat` files end each row with a trailing `|`, which DuckDB's CSV
+reader tolerates but Postgres's `COPY` rejects
+(`extra data after last expected column`), so the script strips it from
+each line before streaming the data into `COPY ... FROM STDIN`. Each
+table is `TRUNCATE`d first, so it's safe to re-run.
 
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
