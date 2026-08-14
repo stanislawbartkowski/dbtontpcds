@@ -282,6 +282,33 @@ connected. Verify the connection with:
 .venv/bin/dbt debug --target dev_postgres
 ```
 
+### Create the tables in the raw schema
+
+The table DDL comes from the TPC-DS tools (`tpcds.sql`), same as the
+DuckDB setup — Postgres supports it as-is (types, `primary key`
+constraints, and `time` columns all work natively, unlike DuckDB and
+Spark, which each need the DDL adapted). Create a `raw` schema and run
+the DDL against it so the unqualified `CREATE TABLE` statements land in
+`raw` instead of `public`:
+
+```bash
+cat > /tmp/load_raw_postgres.sql <<'EOF'
+CREATE SCHEMA IF NOT EXISTS raw;
+SET search_path TO raw;
+\i /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql
+EOF
+
+psql -h localhost -U tpc -d tpc_data < /tmp/load_raw_postgres.sql
+```
+
+Replace `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql` with the
+location valid in your environment. Run this once to set up the 25
+TPC-DS tables (`call_center`, `customer`, `store_sales`, `web_sales`,
+etc.) empty in the `raw` schema — loading data into them follows the same
+pattern as `scripts/load_raw_data.sh` (DuckDB) and
+`scripts/load_raw_data_spark.py` (Spark), which don't yet have a
+Postgres equivalent.
+
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
 - Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
