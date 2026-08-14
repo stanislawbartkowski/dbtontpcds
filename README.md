@@ -335,6 +335,34 @@ reader tolerates but Postgres's `COPY` rejects
 each line before streaming the data into `COPY ... FROM STDIN`. Each
 table is `TRUNCATE`d first, so it's safe to re-run.
 
+## Db2
+
+The `dev_db2` target in `profiles.yml` connects to a local Db2 instance
+(`db2inst1`, port 25000) as user `tpc` (password `secret`), database
+`TPC_DATA`. Unlike Postgres, Db2 authenticates against OS-level user
+accounts by default rather than database-managed roles, so setting this
+up needs both an OS user and a database, created by someone with root /
+instance-admin rights (this hasn't been run or verified in this
+environment — check the exact commands against your Db2 install):
+
+```bash
+# as root: create the OS user Db2 will authenticate against
+useradd -m tpc
+echo 'tpc:secret' | chpasswd
+
+# as db2inst1: create the database and grant the new user access
+db2 CREATE DATABASE TPC_DATA
+db2 CONNECT TO TPC_DATA
+db2 GRANT DBADM ON DATABASE TO USER tpc
+db2 CONNECT RESET
+```
+
+Verify the connection with:
+
+```bash
+.venv/bin/dbt debug --target dev_db2
+```
+
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
 - Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers
