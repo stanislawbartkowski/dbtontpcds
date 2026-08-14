@@ -1,5 +1,5 @@
 
-select  count(*) from (
+select  count(*) as hot_cust_count from (
     select distinct c_last_name, c_first_name, d_date
     from {{ ref('store_sales') }}, {{ ref('date_dim') }}, {{ ref('customer') }}
           where {{ ref('store_sales') }}.ss_sold_date_sk = {{ ref('date_dim') }}.d_date_sk

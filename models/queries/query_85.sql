@@ -1,8 +1,8 @@
 
-select  substr(r_reason_desc,1,20)
-       ,avg(ws_quantity)
-       ,avg(wr_refunded_cash)
-       ,avg(wr_fee)
+select  substr(r_reason_desc,1,20) as reason_desc_substr
+       ,avg(ws_quantity) as avg_ws_quantity
+       ,avg(wr_refunded_cash) as avg_wr_refunded_cash
+       ,avg(wr_fee) as avg_wr_fee
  from {{ ref('web_sales') }}, {{ ref('web_returns') }}, {{ ref('web_page') }}, {{ ref('customer_demographics') }} cd1,
       {{ ref('customer_demographics') }} cd2, {{ ref('customer_address') }}, {{ ref('date_dim') }}, {{ ref('reason') }} 
  where ws_web_page_sk = wp_web_page_sk

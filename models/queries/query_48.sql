@@ -1,5 +1,5 @@
 
-select sum (ss_quantity)
+select sum (ss_quantity) as total_quantity
  from {{ ref('store_sales') }}, {{ ref('store') }}, {{ ref('customer_demographics') }}, {{ ref('customer_address') }}, {{ ref('date_dim') }}
  where s_store_sk = ss_store_sk
  and  ss_sold_date_sk = d_date_sk and d_year = 1998

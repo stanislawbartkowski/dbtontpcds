@@ -1,6 +1,6 @@
 
 select  s_store_name
-      ,sum(ss_net_profit)
+      ,sum(ss_net_profit) as total_net_profit
  from {{ ref('store_sales') }}
      ,{{ ref('date_dim') }}
      ,{{ ref('store') }},

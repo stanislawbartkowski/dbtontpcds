@@ -29,7 +29,7 @@ with frequent_ss_items as
   *
 from
  max_store_sales))
-  select  sum(sales)
+  select  sum(sales) as total_sales
  from (select cs_quantity*cs_list_price sales
        from {{ ref('catalog_sales') }}
            ,{{ ref('date_dim') }} 

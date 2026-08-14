@@ -1,5 +1,5 @@
 
-select  ca_zip, ca_county, sum(ws_sales_price)
+select  ca_zip, ca_county, sum(ws_sales_price) as total_sales
  from {{ ref('web_sales') }}, {{ ref('customer') }}, {{ ref('customer_address') }}, {{ ref('date_dim') }}, {{ ref('item') }}
  where ws_bill_customer_sk = c_customer_sk
  	and c_current_addr_sk = ca_address_sk 

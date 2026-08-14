@@ -1,6 +1,6 @@
 
 select  ca_zip
-       ,sum(cs_sales_price)
+       ,sum(cs_sales_price) as total_sales_price
  from {{ ref('catalog_sales') }}
      ,{{ ref('customer') }}
      ,{{ ref('customer_address') }}

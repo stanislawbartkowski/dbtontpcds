@@ -2,7 +2,7 @@
 select  dt.d_year
  	,{{ ref('item') }}.i_category_id
  	,{{ ref('item') }}.i_category
- 	,sum(ss_ext_sales_price)
+ 	,sum(ss_ext_sales_price) as total_sales
  from 	{{ ref('date_dim') }} dt
  	,{{ ref('store_sales') }}
  	,{{ ref('item') }}

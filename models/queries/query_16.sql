@@ -1,8 +1,8 @@
 
 select  
-   count(distinct cs_order_number) as "order count"
-  ,sum(cs_ext_ship_cost) as "total shipping cost"
-  ,sum(cs_net_profit) as "total net profit"
+   count(distinct cs_order_number) as {{ ident("order count") }}
+  ,sum(cs_ext_ship_cost) as {{ ident("total shipping cost") }}
+  ,sum(cs_net_profit) as {{ ident("total net profit") }}
 from
    {{ ref('catalog_sales') }} cs1
   ,{{ ref('date_dim') }}

@@ -1,5 +1,5 @@
 
-select  sum(cs_ext_discount_amt)  as "excess discount amount" 
+select  sum(cs_ext_discount_amt)  as {{ ident("excess discount amount") }} 
 from 
    {{ ref('catalog_sales') }} 
    ,{{ ref('item') }} 

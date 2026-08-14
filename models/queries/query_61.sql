@@ -1,5 +1,5 @@
 
-select  promotions,total,cast(promotions as decimal(15,4))/cast(total as decimal(15,4))*100
+select  promotions,total,cast(promotions as decimal(15,4))/cast(total as decimal(15,4))*100 as promotional_pct
 from
   (select sum(ss_ext_sales_price) promotions
    from  {{ ref('store_sales') }}

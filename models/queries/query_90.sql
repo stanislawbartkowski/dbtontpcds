@@ -7,7 +7,7 @@ select  cast(amc as decimal(15,4))/cast(pmc as decimal(15,4)) am_pm_ratio
          and ws_web_page_sk = {{ ref('web_page') }}.wp_web_page_sk
          and {{ ref('time_dim') }}.t_hour between 6 and 6+1
          and {{ ref('household_demographics') }}.hd_dep_count = 8
-         and {{ ref('web_page') }}.wp_char_count between 5000 and 5200) as "at",
+         and {{ ref('web_page') }}.wp_char_count between 5000 and 5200) as {{ ident("at") }},
       ( select count(*) pmc
        from {{ ref('web_sales') }}, {{ ref('household_demographics') }} , {{ ref('time_dim') }}, {{ ref('web_page') }}
        where ws_sold_time_sk = {{ ref('time_dim') }}.t_time_sk

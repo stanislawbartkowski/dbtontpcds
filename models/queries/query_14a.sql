@@ -57,7 +57,7 @@ with  cross_items as
            ,{{ ref('date_dim') }}
        where ws_sold_date_sk = d_date_sk
          and d_year between 1998 and 1998 + 2) x)
-  select  channel, i_brand_id,i_class_id,i_category_id,sum(sales), sum(number_sales)
+  select  channel, i_brand_id,i_class_id,i_category_id,sum(sales) as total_sales, sum(number_sales) as total_number_sales
  from(
        select 'store' channel, i_brand_id,i_class_id
              ,i_category_id,sum(ss_quantity*ss_list_price) sales

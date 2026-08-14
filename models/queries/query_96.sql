@@ -1,5 +1,5 @@
 
-select  count(*) 
+select  count(*) as store_sales_count 
 from {{ ref('store_sales') }}
     ,{{ ref('household_demographics') }} 
     ,{{ ref('time_dim') }}, {{ ref('store') }}
