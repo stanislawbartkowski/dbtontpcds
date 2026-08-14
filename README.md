@@ -156,7 +156,7 @@ these before executing so all 99 query templates run as-is:
 ```bash
 dbt show --inline "select * from analytics.query_1"
 
- dbt show --inline "select * from {{ref('analytics.query_1') }} "
+dbt show --inline "select * from {{ref('analytics.query_1') }} "
  ```
 
 
@@ -259,6 +259,27 @@ spark.sql("select 1").show()
 
 ```bash
 $SPARK_HOME/bin/spark-connect-shell --remote sc://localhost:15002
+```
+
+## Postgres
+
+The `dev_postgres` target in `profiles.yml` connects to a local Postgres
+server as user `tpc` (password `secret`), database `tpc_data`. That role
+and database aren't created automatically — set them up once as a Postgres
+superuser:
+
+```bash
+psql -h /var/run/postgresql -U postgres <<'EOF'
+CREATE ROLE tpc WITH LOGIN PASSWORD 'secret';
+CREATE DATABASE tpc_data OWNER tpc;
+EOF
+```
+
+`tpc` owns `tpc_data`, so it can create schemas and tables in it once
+connected. Verify the connection with:
+
+```bash
+.venv/bin/dbt debug --target dev_postgres
 ```
 
 ### Resources:

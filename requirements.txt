@@ -1,6 +1,7 @@
 dbt-core
 dbt-duckdb
 dbt-spark[session]
+dbt-postgres
 pandas>=2.2.0,<3.0.0
 pyarrow>=18.0.0
 grpcio>=1.76.0
