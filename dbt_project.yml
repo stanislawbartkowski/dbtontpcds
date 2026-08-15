@@ -27,5 +27,5 @@ models:
     staging:
       +materialized: view
     queries:
-      +materialized: view
+      +materialized: "{{ 'table' if target.type == 'ibmdb2' else 'view' }}"
       +schema: analytics

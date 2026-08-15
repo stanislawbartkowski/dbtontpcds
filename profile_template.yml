@@ -37,7 +37,7 @@ sample_project:
       host: localhost
       port: 25000
       database: TPC_DATA
-      user: tpc
+      user: db2inst1
       password: secret
       schema: TPC
       threads: 4

@@ -345,24 +345,51 @@ table is `TRUNCATE`d first, so it's safe to re-run.
 
 ## Db2
 
-The `dev_db2` target in `profiles.yml` connects to a local Db2 instance
-(`db2inst1`, port 25000) as user `tpc` (password `secret`), database
+The `dev_db2` target in `profiles.yml` connects to a local Db2 instance,
+port 25000, as its instance owner — OS user `db2inst1` — database
 `TPC_DATA`. Unlike Postgres, Db2 authenticates against OS-level user
-accounts by default rather than database-managed roles, so setting this
-up needs both an OS user and a database, created by someone with root /
-instance-admin rights (this hasn't been run or verified in this
-environment — check the exact commands against your Db2 install):
+accounts by default rather than database-managed roles; `db2inst1` is
+created by the Db2 installer and already has SYSADM authority, so the
+only setup needed is creating the database itself, run as `db2inst1`
+(this hasn't been run or verified in this environment — check the exact
+commands against your Db2 install):
 
 ```bash
-# as root: create the OS user Db2 will authenticate against
-useradd -m tpc
-echo 'tpc:secret' | chpasswd
-
-# as db2inst1: create the database and grant the new user access
+# as db2inst1:
 db2 CREATE DATABASE TPC_DATA
-db2 CONNECT TO TPC_DATA
-db2 GRANT DBADM ON DATABASE TO USER tpc
-db2 CONNECT RESET
+```
+
+`profile_template.yml`'s `password: secret` for this target is a
+placeholder — fill in `db2inst1`'s actual OS password (set during Db2
+installation, or reset with `passwd db2inst1` as root) in `profiles.yml`
+and wherever `DB2_PASSWORD` is referenced below.
+
+### Make the `db2` command line available
+
+The `db2` CLP used below and by `scripts/load_raw_data_db2.sh` isn't on
+`PATH` by default outside of a `db2inst1` login shell — the Db2 installer
+only wires it up automatically for `db2inst1` itself, by adding these
+lines to `/home/db2inst1/.bashrc`:
+
+```bash
+# The following three lines have been added by UDB DB2.
+if [ -f /home/db2inst1/sqllib/db2profile ]; then
+    . /home/db2inst1/sqllib/db2profile
+fi
+```
+
+If you're running the commands below as a different OS user (as this
+guide does), add the same three lines to that user's `~/.bashrc`, then
+open a new shell (or `source ~/.bashrc`) so `db2` is on `PATH`:
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+# The following three lines have been added by UDB DB2.
+if [ -f /home/db2inst1/sqllib/db2profile ]; then
+    . /home/db2inst1/sqllib/db2profile
+fi
+EOF
+source ~/.bashrc
 ```
 
 Verify the connection with:
@@ -370,6 +397,87 @@ Verify the connection with:
 ```bash
 .venv/bin/dbt debug --target dev_db2
 ```
+
+### Create the tables in the raw schema
+
+The table DDL comes from the TPC-DS tools (`tpcds.sql`), same as the
+DuckDB and Postgres setups. Create a `raw` schema and set it as the
+current schema so the unqualified `CREATE TABLE` statements land there
+instead of `TPC` (the profile's default schema, used for dbt's own
+models):
+
+```bash
+cat > /tmp/load_raw_db2.sql <<'EOF'
+CREATE SCHEMA raw;
+SET SCHEMA raw;
+EOF
+
+db2 CONNECT TO TPC_DATA USER db2inst1 USING secret
+db2 -tvf /tmp/load_raw_db2.sql
+db2 -tvf /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql
+db2 CONNECT RESET
+```
+
+Replace `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql` with the
+location valid in your environment. The Db2 CLP keeps its connection and
+current schema attached across separate `db2` invocations in the same
+shell session, so the two `-tvf` calls above both run against `TPC_DATA`
+with `raw` as the current schema. Run this once to set up the 25 TPC-DS
+tables (`call_center`, `customer`, `store_sales`, `web_sales`, etc.)
+empty in the `raw` schema.
+
+### Load the raw data
+
+Use `scripts/load_raw_data_db2.sh` to load the same `.dat` files used for
+`scripts/load_raw_data.sh` (DuckDB), `scripts/load_raw_data_spark.py`
+(Spark), and `scripts/load_raw_data_postgres.sh` (Postgres) into the
+`raw` tables created above:
+
+```bash
+./scripts/load_raw_data_db2.sh <dat_directory> [db2_database]
+```
+
+- `<dat_directory>` (required) — directory containing the `.dat` files,
+  e.g. `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
+- `[db2_database]` (optional) — Db2 database alias to connect to,
+  defaults to `TPC_DATA` (the `dev_db2` profile target); the connection
+  user/password come from the `DB2_USER`/`DB2_PASSWORD` env vars,
+  defaulting to `db2inst1`/`secret`
+
+Example:
+
+```bash
+./scripts/load_raw_data_db2.sh /home/dbt/tpc/DSGen-software-code-4.0.0/dat
+```
+
+Like Postgres's `COPY`, Db2's `IMPORT` rejects the trailing `|` at the
+end of each row dsdgen emits, so the script strips it from each line
+before importing (via a stripped copy in a temp directory, since
+`IMPORT` reads from a file rather than stdin). Each table is
+`TRUNCATE`d first, so it's safe to re-run. `IMPORT` commits every 10000
+rows to avoid filling the transaction log on the larger fact tables at
+higher `-SCALE` factors.
+
+Caveat: like the rest of this Db2 section, this script hasn't been run
+or verified against a live Db2 instance in this environment — check its
+behavior against your Db2 install.
+
+### Query models
+
+`models/queries/*.sql` (configured `view` in `dbt_project.yml`) build as
+`table`s on `dev_db2` instead, via a target-aware override:
+
+```yaml
+queries:
+  +materialized: "{{ 'table' if target.type == 'ibmdb2' else 'view' }}"
+```
+
+Db2 rejects `ORDER BY` in a `CREATE VIEW` whose body opens with a `WITH`
+(CTE) clause — most query models are `with ... select ... order by ...
+{{ add_limit() }}` — with `SQL20211N The specification ORDER BY, OFFSET,
+or FETCH clause is invalid`. A plain `SELECT` or `CREATE TABLE ... AS`
+with the same CTE + `ORDER BY` + `LIMIT` runs fine, so materializing as a
+table sidesteps the restriction instead of rewriting every query.
 
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
