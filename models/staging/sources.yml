@@ -6,27 +6,127 @@ sources:
     database: "{{ 'dev' if target.type == 'duckdb' else '' }}"
     tables:
       - name: call_center
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 6
       - name: catalog_page
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 11718
       - name: catalog_returns
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 144067
       - name: catalog_sales
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 1441548
       - name: customer
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 100000
       - name: customer_address
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 50000
       - name: customer_demographics
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 1920800
       - name: date_dim
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 73049
       - name: dbgen_version
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 1
       - name: household_demographics
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 7200
       - name: income_band
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 20
       - name: inventory
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 11745000
       - name: item
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 18000
       - name: promotion
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 300
       - name: reason
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 75
       - name: ship_mode
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 20
       - name: store
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 12
       - name: store_returns
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 287514
       - name: store_sales
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 2880404
       - name: time_dim
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 86400
       - name: warehouse
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 5
       - name: web_page
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 60
       - name: web_returns
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 71763
       - name: web_sales
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 719384
       - name: web_site
+        data_tests:
+          - expect_row_count:
+              arguments:
+                row_count: 30
