@@ -2,14 +2,17 @@
 """Load TPC-DS pipe-delimited .dat files into the tpc_raw schema in Databricks.
 
 Mirrors scripts/load_raw_data_spark.py for the Databricks target set up by
-scripts/create_raw_schema_databricks.py: each .dat file is uploaded into a
-Unity Catalog volume (`<catalog>.tpc_raw.raw_stage`) via the SQL connector's
-staging endpoint, then bulk-loaded with COPY INTO. Each table's column names
+scripts/create_raw_schema_databricks.py: each .dat file is gzipped into a
+temporary directory (the staging endpoint drops the connection on
+multi-hundred-MB uploads, and COPY INTO's CSV reader decompresses .gz
+transparently), uploaded into a Unity Catalog volume
+(`<catalog>.tpc_raw.raw_stage`) via the SQL connector's staging endpoint
+(with retries), then bulk-loaded with COPY INTO. Each table's column names
 and types are read back from the catalog (so they always match what the
 create script created, including its TIME -> STRING adjustment) and drive
 explicit casts in the COPY INTO select list. The trailing `|` dsdgen emits
 at the end of every row simply parses as one extra empty column, which the
-select list never references, so the files are uploaded as-is.
+select list never references, so the file contents are staged as-is.
 
 Each table is TRUNCATEd first and COPY INTO runs with 'force' = 'true'
 (otherwise it skips files it has already loaded once), so it's safe to
@@ -22,11 +25,16 @@ DBT_DATABRICKS_TOKEN, DBT_CATALOG.
 Usage: ./load_raw_data_databricks.py <dat_directory>
   dat_directory     Directory containing the *.dat files (e.g. DSGen-software-code-4.0.0/dat)
 """
+import gzip
 import os
+import shutil
 import sys
+import tempfile
+import time
 
 SCHEMA = "tpc_raw"
 VOLUME = "raw_stage"
+PUT_ATTEMPTS = 3
 
 TABLES = [
     "call_center", "catalog_page", "catalog_returns", "catalog_sales", "customer",
@@ -76,20 +84,35 @@ def main() -> None:
 
     from databricks import sql
 
+    stage_dir = tempfile.mkdtemp(prefix="tpcds_gz_")
     with sql.connect(
         server_hostname=host,
         http_path=http_path,
         access_token=token,
-        staging_allowed_local_path=dat_dir,
+        staging_allowed_local_path=stage_dir,
     ) as conn, conn.cursor() as cursor:
         cursor.execute(f"USE {catalog}.{SCHEMA}")
         cursor.execute(f"CREATE VOLUME IF NOT EXISTS {VOLUME}")
         volume_dir = f"/Volumes/{catalog}/{SCHEMA}/{VOLUME}"
 
         for table in TABLES:
-            staged = f"{volume_dir}/{table}.dat"
-            print(f"Uploading {table}.dat...", flush=True)
-            cursor.execute(f"PUT '{dat_paths[table]}' INTO '{staged}' OVERWRITE")
+            gz_path = os.path.join(stage_dir, f"{table}.dat.gz")
+            print(f"Compressing {table}.dat...", flush=True)
+            with open(dat_paths[table], "rb") as src, gzip.open(gz_path, "wb", compresslevel=1) as dst:
+                shutil.copyfileobj(src, dst)
+
+            staged = f"{volume_dir}/{table}.dat.gz"
+            print(f"Uploading {table}.dat.gz...", flush=True)
+            for attempt in range(1, PUT_ATTEMPTS + 1):
+                try:
+                    cursor.execute(f"PUT '{gz_path}' INTO '{staged}' OVERWRITE")
+                    break
+                except sql.exc.RequestError:
+                    if attempt == PUT_ATTEMPTS:
+                        raise
+                    print(f"  upload failed (attempt {attempt}/{PUT_ATTEMPTS}), retrying...", flush=True)
+                    time.sleep(5)
+            os.remove(gz_path)
 
             select_list = ", ".join(
                 f"CAST(_c{i} AS {data_type}) AS {name}"
@@ -109,6 +132,7 @@ def main() -> None:
             rows = cursor.fetchone()
             print(f"  {rows.num_inserted_rows} rows", flush=True)
 
+    shutil.rmtree(stage_dir, ignore_errors=True)
     print(f"Loaded {len(TABLES)} tables into schema '{catalog}.{SCHEMA}'.")
 
 

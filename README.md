@@ -560,19 +560,23 @@ Example:
 .venv/bin/python scripts/load_raw_data_databricks.py /home/dbt/tpc/DSGen-software-code-4.0.0/dat
 ```
 
-For each table the script uploads the `.dat` file into a Unity Catalog
-volume (`<catalog>.tpc_raw.raw_stage`, created if missing) through the
-SQL connector's staging endpoint (`PUT`), then bulk-loads it with
-`COPY INTO`. Column names and types are read back from the catalog (so
-they always match what `scripts/create_raw_schema_databricks.py` created,
-including its `TIME` → `STRING` adjustment) and drive explicit casts in
-the `COPY INTO` select list. The trailing `|` dsdgen emits at the end of
+For each table the script gzips the `.dat` file into a temp directory
+(the staging endpoint drops the connection on multi-hundred-MB uploads,
+and `COPY INTO`'s CSV reader decompresses `.gz` transparently), uploads
+it into a Unity Catalog volume (`<catalog>.tpc_raw.raw_stage`, created
+if missing) through the SQL connector's staging endpoint (`PUT`, retried
+up to 3 times), then bulk-loads it with `COPY INTO`. Column names and
+types are read back from the catalog (so they always match what
+`scripts/create_raw_schema_databricks.py` created, including its
+`TIME` → `STRING` adjustment) and drive explicit casts in the
+`COPY INTO` select list. The trailing `|` dsdgen emits at the end of
 every row just parses as one extra empty column that the select list
-never references, so — unlike the Postgres and Db2 loaders — the files
-are uploaded unmodified. Each table is `TRUNCATE`d first and `COPY INTO`
-runs with `'force' = 'true'` (otherwise it skips files it has already
-loaded once), so it's safe to re-run. At `-SCALE 1` the `.dat` files
-total ~1.2 GB, so the upload step dominates the runtime.
+never references, so — unlike the Postgres and Db2 loaders — the file
+contents are staged unmodified. Each table is `TRUNCATE`d first and
+`COPY INTO` runs with `'force' = 'true'` (otherwise it skips files it
+has already loaded once), so it's safe to re-run. At `-SCALE 1` the
+`.dat` files total ~1.2 GB (~300 MB gzipped), so the upload step
+dominates the runtime.
 
 Verify the load with the source row-count tests:
 
