@@ -28,4 +28,4 @@ models:
       +materialized: view
     queries:
       +materialized: "{{ 'table' if target.type == 'ibmdb2' else 'view' }}"
-      +schema: analytics
+      +schema: "{{ 'tpc_queries' if target.type == 'databricks' else 'analytics' }}"

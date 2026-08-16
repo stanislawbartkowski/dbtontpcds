@@ -8,6 +8,15 @@
 # README's "Spark Connect" section. The dev_postgres and dev_db2 targets
 # need a database/role created first - see the README's "Postgres" and
 # "Db2" sections.
+#
+# The dev_databricks target reads its connection settings from environment
+# variables (dbt-databricks adapter must be installed: pip install dbt-databricks):
+#
+#   export DBT_DATABRICKS_HOST=adb-1234567890123456.7.azuredatabricks.net  # no https://
+#   export DBT_DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
+#   export DBT_DATABRICKS_TOKEN=<personal-access-token>
+#   export DBT_CATALOG=main   # optional, defaults to main
+#   export DBT_SCHEMA=tpc     # optional, defaults to tpc
 
 sample_project:
   outputs:
@@ -40,5 +49,13 @@ sample_project:
       user: db2inst1
       password: secret
       schema: TPC
+      threads: 4
+    dev_databricks:
+      type: databricks
+      host: "{{ env_var('DBT_DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DBT_DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DBT_DATABRICKS_TOKEN') }}"
+      catalog: "{{ env_var('DBT_CATALOG', 'main') }}"
+      schema: "{{ env_var('DBT_SCHEMA', 'tpc') }}"
       threads: 4
   target: dev_duckdb

@@ -479,6 +479,107 @@ or FETCH clause is invalid`. A plain `SELECT` or `CREATE TABLE ... AS`
 with the same CTE + `ORDER BY` + `LIMIT` runs fine, so materializing as a
 table sidesteps the restriction instead of rewriting every query.
 
+## Databricks
+
+The `dev_databricks` target in `profiles.yml` connects to a Databricks SQL
+warehouse. Unlike the other targets it carries no inline credentials —
+everything comes from environment variables. Copy the checked-in
+`env_template` to `.env` (gitignored), fill in real values, and source it
+before running dbt or any of the scripts below:
+
+```bash
+cp env_template .env
+source .env
+```
+
+```bash
+export DBT_DATABRICKS_HOST=<workspace-host>            # without https://
+export DBT_DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
+export DBT_DATABRICKS_TOKEN=<personal-access-token>
+export DBT_CATALOG=<unity-catalog-name>                # optional, defaults to main
+export DBT_SCHEMA=<schema-for-staging-models>          # optional, defaults to tpc
+```
+
+Verify the connection with:
+
+```bash
+.venv/bin/dbt debug --target dev_databricks
+```
+
+On this target the schemas are split: raw data lands in `tpc_raw` and the
+query models build in `tpc_queries` (both target-aware overrides, in
+`models/staging/sources.yml` and `dbt_project.yml` respectively), while
+staging views go to the profile's default schema (`DBT_SCHEMA`). All of
+them live in the `DBT_CATALOG` Unity Catalog.
+
+### Create the tables in the raw schema
+
+Use `scripts/create_raw_schema_databricks.py` to create the 25 TPC-DS
+tables in the `<catalog>.tpc_raw` schema, from the same `tpcds.sql` DDL
+used by the other targets:
+
+```bash
+source .env
+.venv/bin/python scripts/create_raw_schema_databricks.py <tpcds_sql_path>
+```
+
+- `<tpcds_sql_path>` (required) — path to `tpcds.sql`, e.g.
+  `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql`
+
+Example:
+
+```bash
+.venv/bin/python scripts/create_raw_schema_databricks.py /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql
+```
+
+The script connects through `databricks-sql-connector` (installed as a
+dependency of `dbt-databricks`) using the same `DBT_DATABRICKS_*` /
+`DBT_CATALOG` environment variables as the dbt profile. It adapts the DDL
+the same way the Spark script does: it drops the `primary key (...)`
+constraint clauses (Unity Catalog primary keys are informational-only and
+need different syntax) and maps the `time` column type to `string`, since
+Databricks has no `TIME` type. The schema and tables are created with
+`IF NOT EXISTS`, so it's safe to re-run.
+
+### Load the raw data
+
+Use `scripts/load_raw_data_databricks.py` to load the same `.dat` files
+used by the other targets into the `tpc_raw` tables created above:
+
+```bash
+source .env
+.venv/bin/python scripts/load_raw_data_databricks.py <dat_directory>
+```
+
+- `<dat_directory>` (required) — directory containing the `.dat` files,
+  e.g. `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
+
+Example:
+
+```bash
+.venv/bin/python scripts/load_raw_data_databricks.py /home/dbt/tpc/DSGen-software-code-4.0.0/dat
+```
+
+For each table the script uploads the `.dat` file into a Unity Catalog
+volume (`<catalog>.tpc_raw.raw_stage`, created if missing) through the
+SQL connector's staging endpoint (`PUT`), then bulk-loads it with
+`COPY INTO`. Column names and types are read back from the catalog (so
+they always match what `scripts/create_raw_schema_databricks.py` created,
+including its `TIME` → `STRING` adjustment) and drive explicit casts in
+the `COPY INTO` select list. The trailing `|` dsdgen emits at the end of
+every row just parses as one extra empty column that the select list
+never references, so — unlike the Postgres and Db2 loaders — the files
+are uploaded unmodified. Each table is `TRUNCATE`d first and `COPY INTO`
+runs with `'force' = 'true'` (otherwise it skips files it has already
+loaded once), so it's safe to re-run. At `-SCALE 1` the `.dat` files
+total ~1.2 GB, so the upload step dominates the runtime.
+
+Verify the load with the source row-count tests:
+
+```bash
+.venv/bin/dbt test --target dev_databricks --select "source:*"
+```
+
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
 - Check out [Discourse](https://discourse.getdbt.com/) for commonly asked questions and answers

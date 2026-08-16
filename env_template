@@ -1,0 +1,14 @@
+# Template for .env, which is gitignored because it carries Databricks
+# credentials. Copy this file to .env, fill in real values, then
+# `source .env` before running dbt or the Databricks scripts:
+#
+#   cp env_template .env
+
+# Workspace hostname, without https://
+export DBT_DATABRICKS_HOST=<workspace-host>
+export DBT_DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
+export DBT_DATABRICKS_TOKEN=<personal-access-token>
+
+# Unity Catalog configuration
+export DBT_CATALOG=main
+export DBT_SCHEMA=tpc

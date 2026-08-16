@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: raw_data
-    schema: "{{ 'tpc_raw' if target.type == 'spark' else 'raw' }}"
+    schema: "{{ 'tpc_raw' if target.type in ('spark', 'databricks') else 'raw' }}"
     database: "{{ 'dev' if target.type == 'duckdb' else '' }}"
     tables:
       - name: call_center
