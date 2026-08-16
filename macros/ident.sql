@@ -1,5 +1,5 @@
 {% macro ident(name) %}
-{%- if target.type == 'spark' -%}
+{%- if target.type in ('spark', 'databricks') -%}
 `{{ name }}`
 {%- else -%}
 "{{ name }}"
