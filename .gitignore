@@ -2,6 +2,7 @@
 .claude/
 logs/
 target/
+result/
 dbt_packages/
 dbt_internal_packages/
 .env
@@ -10,3 +11,4 @@ profiles.yml
 .user.yml
 metastore_db/
 spark-warehouse/
+.DS_Store

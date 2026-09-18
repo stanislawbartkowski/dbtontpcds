@@ -167,6 +167,26 @@ dbt show --inline "select * from analytics.query_1"
 dbt show --inline "select * from {{ref('analytics.query_1') }} "
  ```
 
+### Benchmark all queries for a target
+
+Use `scripts/run_all_queries.py` to run every `models/queries/*.sql` model
+(a plain `dbt run --select queries` under the hood) against a given target
+and record each query's execution time into an Excel report:
+
+```bash
+.venv/bin/python scripts/run_all_queries.py <target>
+```
+
+- `<target>` (required) — dbt target to run against, e.g. `dev_duckdb`,
+  `dev_postgres`, `dev_db2`, `dev_databricks`, `dev_spark`.
+- `--select` (optional) — dbt `--select` expression (default: `queries`).
+- `--profiles-dir` (optional) — dbt `--profiles-dir` (default: `.`).
+- `--result-dir` (optional) — output directory (default: `result`, gitignored).
+
+Each run writes `result/query_execution_<target>_<timestamp>.xlsx`, with one
+row per query: `Query` (e.g. `query_1`), `Target`, and `Execution Time`
+(`HH:MM:SS`, read from dbt's `run_results.json`).
+
 
 ## Spark Connect
 
