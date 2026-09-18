@@ -2,12 +2,16 @@
 """Run all TPC-DS query models for a given dbt target and report per-query
 execution time as an Excel file in the result directory.
 
+The RESULT_PREFIX environment variable (default: "1", for the SCALE 1
+dataset) is embedded in the output filename: query_{RESULT_PREFIX}_<target>_<timestamp>.xlsx
+
 Usage:
     .venv/bin/python scripts/run_all_queries.py <target> [--select queries] [--profiles-dir .] [--result-dir result]
 """
 import argparse
 import datetime
 import json
+import os
 import re
 import subprocess
 import sys
@@ -78,10 +82,12 @@ def main() -> None:
 
     df = load_query_timings(args.target, run_results_path)
 
+    result_prefix = os.environ.get("RESULT_PREFIX", "1")
+
     result_dir = PROJECT_ROOT / args.result_dir
     result_dir.mkdir(exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = result_dir / f"query_execution_{args.target}_{timestamp}.xlsx"
+    out_path = result_dir / f"query_{result_prefix}_{args.target}_{timestamp}.xlsx"
     df.to_excel(out_path, index=False, engine="openpyxl")
 
     print(f"Wrote {len(df)} query timings to {out_path}")

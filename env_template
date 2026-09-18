@@ -12,3 +12,5 @@ export DBT_DATABRICKS_TOKEN=<personal-access-token>
 # Unity Catalog configuration
 export DBT_CATALOG=main
 export DBT_SCHEMA=tpc
+
+export RESULT_PREFIX=1

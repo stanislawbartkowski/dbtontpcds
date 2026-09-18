@@ -182,10 +182,13 @@ and record each query's execution time into an Excel report:
 - `--select` (optional) — dbt `--select` expression (default: `queries`).
 - `--profiles-dir` (optional) — dbt `--profiles-dir` (default: `.`).
 - `--result-dir` (optional) — output directory (default: `result`, gitignored).
+- `RESULT_PREFIX` (optional env var, set in `.env`) — identifies the dataset
+  size the run was against (e.g. `1` for the SCALE 1 dataset, a future `10`
+  for SCALE 10); defaults to `1`.
 
-Each run writes `result/query_execution_<target>_<timestamp>.xlsx`, with one
-row per query: `Query` (e.g. `query_1`), `Target`, and `Execution Time`
-(`HH:MM:SS`, read from dbt's `run_results.json`).
+Each run writes `result/query_{RESULT_PREFIX}_<target>_<timestamp>.xlsx`,
+with one row per query: `Query` (e.g. `query_1`), `Target`, and
+`Execution Time` (`HH:MM:SS`, read from dbt's `run_results.json`).
 
 
 ## Spark Connect
