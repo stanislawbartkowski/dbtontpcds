@@ -18,6 +18,17 @@
 #   export DBT_CATALOG=main   # optional, defaults to main
 #   export DBT_SCHEMA=tpc     # optional, defaults to tpc
 #
+# The dev_postgres target also reads its connection settings from
+# environment variables. HOST, USER, PASSWORD, and SCHEMA are required
+# (no default); only PORT and DBNAME have defaults:
+#
+#   export DBT_POSTGRES_HOST=<host>
+#   export DBT_POSTGRES_PORT=5432             # optional, defaults to 5432
+#   export DBT_POSTGRES_USER=<user>
+#   export DBT_POSTGRES_PASSWORD=<password>
+#   export DBT_POSTGRES_DBNAME=tpc_data       # optional, defaults to tpc_data
+#   export DBT_POSTGRES_SCHEMA=<schema>
+#
 # The default target below is read from DBT_TARGET - set it (e.g.
 # `export DBT_TARGET=dev_databricks`) to switch it without passing
 # --target on every dbt command. Left unset, it falls back to the
@@ -40,12 +51,12 @@ sample_project:
         spark.remote: "sc://localhost:15002"
     dev_postgres:
       type: postgres
-      host: localhost
-      port: 5432
-      user: tpc
-      password: secret
-      dbname: tpc_data
-      schema: public
+      host: "{{ env_var('DBT_POSTGRES_HOST') }}"
+      port: "{{ env_var('DBT_POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_POSTGRES_USER') }}"
+      password: "{{ env_var('DBT_POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_POSTGRES_DBNAME', 'tpc_data') }}"
+      schema: "{{ env_var('DBT_POSTGRES_SCHEMA') }}"
       threads: 4
     dev_db2:
       type: ibmdb2

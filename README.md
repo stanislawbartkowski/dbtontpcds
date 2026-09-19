@@ -356,9 +356,11 @@ for `scripts/load_raw_data.sh` (DuckDB) and `scripts/load_raw_data_spark.py`
 - `<dat_directory>` (required) — directory containing the `.dat` files,
   e.g. `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
 - `[psql_arg ...]` (optional) — connection arguments passed through to
-  `psql`, defaulting to `-h localhost -U tpc -d tpc_data` (the
-  `dev_postgres` profile target); the script also honors `PGPASSWORD` if
-  already set, otherwise defaults it to `secret`
+  `psql`, defaulting to `-h $DBT_POSTGRES_HOST -p $DBT_POSTGRES_PORT -U
+  $DBT_POSTGRES_USER -d $DBT_POSTGRES_DBNAME` (the same env vars the
+  `dev_postgres` profile target reads - `source .env` first); the script
+  also honors `PGPASSWORD` if already set, otherwise falls back to
+  `DBT_POSTGRES_PASSWORD`, then `secret`
 
 Example:
 

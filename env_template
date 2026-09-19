@@ -1,20 +1,36 @@
-# Template for .env, which is gitignored because it carries Databricks
-# credentials. Copy this file to .env, fill in real values, then
-# `source .env` before running dbt or the Databricks scripts:
-#
-#   cp env_template .env
+# Copy to .env, fill in real values, then `source .env` before running dbt.
+# .env is gitignored — never commit real credentials.
+
+# -----------------------------
+# Databricks Unity Catalog
+# -----------------------------
 
 # Workspace hostname, without https://
 export DBT_DATABRICKS_HOST=<workspace-host>
-export DBT_DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
 export DBT_DATABRICKS_TOKEN=<personal-access-token>
+
+export DBT_DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/<warehouse-id>
 
 # Unity Catalog configuration
 export DBT_CATALOG=main
 export DBT_SCHEMA=tpc
 
 export RESULT_SIZE=10
-
-# Default dbt target (optional, defaults to dev_duckdb if unset)
 export DBT_TARGET=dev_databricks
-export SQL_ENGINE_DESCRIPTION="Custom SQL descirption added a the top of result excel"
+export SQL_ENGINE_DESCRIPTION="Warehouse serverless cluster (Cluster size = Medium)"
+
+# -------------------------------
+# Postgresql
+# -------------------------------
+
+# HOST, USER, PASSWORD, SCHEMA required; PORT and DBNAME optional
+# (default to 5432 and tpc_data)
+export DBT_POSTGRES_HOST=<host>
+export DBT_POSTGRES_USER=<user>
+export DBT_POSTGRES_PASSWORD=<password>
+export DBT_POSTGRES_DBNAME=tpc_data
+export DBT_POSTGRES_SCHEMA=public
+
+export RESULT_SIZE=1
+export DBT_TARGET=dev_postgres
+export SQL_ENGINE_DESCRIPTION="Standalone Postgres <version>, <linux distro/version>, <CPU model> (<N> vCPU) / <RAM>GB RAM"

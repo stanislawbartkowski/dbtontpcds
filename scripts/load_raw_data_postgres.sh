@@ -11,8 +11,9 @@
 # Usage: ./load_raw_data_postgres.sh <dat_directory> [psql_arg ...]
 #   dat_directory  Directory containing the *.dat files (e.g. DSGen-software-code-4.0.0/dat)
 #   psql_arg ...   Optional connection arguments passed through to psql
-#                  (default: -h localhost -U tpc -d tpc_data, matching the
-#                  dev_postgres profile target)
+#                  (default: derived from the DBT_POSTGRES_* env vars,
+#                  matching the dev_postgres profile target - source .env
+#                  first, or pass explicit args to override)
 
 set -euo pipefail
 
@@ -20,9 +21,14 @@ DAT_DIR="${1:?Usage: $0 <dat_directory> [psql connection args...]}"
 shift
 PSQL_ARGS=("$@")
 if [[ ${#PSQL_ARGS[@]} -eq 0 ]]; then
-  PSQL_ARGS=(-h localhost -U tpc -d tpc_data)
+  PSQL_ARGS=(
+    -h "${DBT_POSTGRES_HOST:-localhost}"
+    -p "${DBT_POSTGRES_PORT:-5432}"
+    -U "${DBT_POSTGRES_USER:-tpc}"
+    -d "${DBT_POSTGRES_DBNAME:-tpc_data}"
+  )
 fi
-export PGPASSWORD="${PGPASSWORD:-secret}"
+export PGPASSWORD="${PGPASSWORD:-${DBT_POSTGRES_PASSWORD:-secret}}"
 
 if [[ ! -d "$DAT_DIR" ]]; then
   echo "Error: dat directory not found: $DAT_DIR" >&2
