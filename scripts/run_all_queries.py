@@ -2,11 +2,13 @@
 """Run all TPC-DS query models for a given dbt target and report per-query
 execution time as an Excel file in the result directory.
 
-The RESULT_PREFIX environment variable (default: "1", for the SCALE 1
-dataset) selects the output subdirectory: result/{RESULT_PREFIX}/query_<target>_<timestamp>.xlsx
+The RESULT_SIZE environment variable (default: "1", for the SCALE 1
+dataset) selects the output subdirectory: result/{RESULT_SIZE}/query_<target>_<timestamp>.xlsx
+
+If <target> is omitted, it falls back to the DBT_TARGET environment variable.
 
 Usage:
-    .venv/bin/python scripts/run_all_queries.py <target> [--select queries] [--profiles-dir .] [--result-dir result]
+    .venv/bin/python scripts/run_all_queries.py [target] [--select queries] [--profiles-dir .] [--result-dir result]
 """
 import argparse
 import datetime
@@ -68,26 +70,30 @@ def load_query_timings(target: str, run_results_path: Path) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", help="dbt target to run against (e.g. dev_duckdb, dev_databricks)")
+    parser.add_argument("target", nargs="?", help="dbt target to run against (e.g. dev_duckdb, dev_databricks); defaults to DBT_TARGET")
     parser.add_argument("--select", default="queries", help="dbt --select expression (default: queries)")
     parser.add_argument("--profiles-dir", default=".", help="dbt --profiles-dir (default: .)")
     parser.add_argument("--result-dir", default="result", help="output directory for the Excel report (default: result)")
     args = parser.parse_args()
 
-    run_dbt(args.target, args.select, args.profiles_dir)
+    target = args.target or os.environ.get("DBT_TARGET")
+    if not target:
+        sys.exit("No target given and DBT_TARGET is not set - pass a target or export DBT_TARGET.")
+
+    run_dbt(target, args.select, args.profiles_dir)
 
     run_results_path = PROJECT_ROOT / "target" / "run_results.json"
     if not run_results_path.exists():
         sys.exit(f"No run_results.json found at {run_results_path} - dbt run may have failed to start.")
 
-    df = load_query_timings(args.target, run_results_path)
+    df = load_query_timings(target, run_results_path)
 
-    result_prefix = os.environ.get("RESULT_PREFIX", "1")
+    result_size = os.environ.get("RESULT_SIZE", "1")
 
-    result_dir = PROJECT_ROOT / args.result_dir / result_prefix
+    result_dir = PROJECT_ROOT / args.result_dir / result_size
     result_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = result_dir / f"query_{args.target}_{timestamp}.xlsx"
+    out_path = result_dir / f"query_{target}_{timestamp}.xlsx"
     df.to_excel(out_path, index=False, engine="openpyxl")
 
     print(f"Wrote {len(df)} query timings to {out_path}")

@@ -174,19 +174,20 @@ Use `scripts/run_all_queries.py` to run every `models/queries/*.sql` model
 and record each query's execution time into an Excel report:
 
 ```bash
-.venv/bin/python scripts/run_all_queries.py <target>
+.venv/bin/python scripts/run_all_queries.py [target]
 ```
 
-- `<target>` (required) — dbt target to run against, e.g. `dev_duckdb`,
-  `dev_postgres`, `dev_db2`, `dev_databricks`, `dev_spark`.
+- `[target]` (optional) — dbt target to run against, e.g. `dev_duckdb`,
+  `dev_postgres`, `dev_db2`, `dev_databricks`, `dev_spark`. Falls back to
+  the `DBT_TARGET` environment variable if omitted.
 - `--select` (optional) — dbt `--select` expression (default: `queries`).
 - `--profiles-dir` (optional) — dbt `--profiles-dir` (default: `.`).
 - `--result-dir` (optional) — output directory (default: `result`, gitignored).
-- `RESULT_PREFIX` (optional env var, set in `.env`) — identifies the dataset
+- `RESULT_SIZE` (optional env var, set in `.env`) — identifies the dataset
   size the run was against (e.g. `1` for the SCALE 1 dataset, a future `10`
   for SCALE 10); defaults to `1`, and selects the output subdirectory.
 
-Each run writes `result/<RESULT_PREFIX>/query_<target>_<timestamp>.xlsx`,
+Each run writes `result/<RESULT_SIZE>/query_<target>_<timestamp>.xlsx`,
 with one row per query: `Query` (e.g. `query_1`), `Target`, and
 `Execution Time` (`HH:MM:SS`, read from dbt's `run_results.json`).
 
@@ -601,7 +602,10 @@ has already loaded once), so it's safe to re-run. At `-SCALE 1` the
 `.dat` files total ~1.2 GB (~300 MB gzipped), so the upload step
 dominates the runtime.
 
-Verify the load with the source row-count tests:
+Verify the load with the source row-count tests. Each table has one
+`expect_row_count` test carrying both a SCALE 1 and a SCALE 10 expected
+count; at runtime it checks against whichever one matches `RESULT_SIZE`
+(from `.env` - `1` for SCALE 1, `10` for SCALE 10):
 
 ```bash
 .venv/bin/dbt test --target dev_databricks --select "source:*"

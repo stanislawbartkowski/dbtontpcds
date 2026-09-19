@@ -13,7 +13,7 @@ export DBT_DATABRICKS_TOKEN=<personal-access-token>
 export DBT_CATALOG=main
 export DBT_SCHEMA=tpc
 
-export RESULT_PREFIX=1
+export RESULT_SIZE=1
 
 # Default dbt target (optional, defaults to dev_duckdb if unset)
 export DBT_TARGET=dev_databricks
