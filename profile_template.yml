@@ -17,6 +17,12 @@
 #   export DBT_DATABRICKS_TOKEN=<personal-access-token>
 #   export DBT_CATALOG=main   # optional, defaults to main
 #   export DBT_SCHEMA=tpc     # optional, defaults to tpc
+#
+# The default target below is read from DBT_TARGET - set it (e.g.
+# `export DBT_TARGET=dev_databricks`) to switch it without passing
+# --target on every dbt command. Left unset, it falls back to the
+# placeholder "dummy_target", which fails fast rather than silently
+# running against the wrong target.
 
 sample_project:
   outputs:
@@ -58,4 +64,4 @@ sample_project:
       catalog: "{{ env_var('DBT_CATALOG', 'main') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'tpc') }}"
       threads: 4
-  target: dev_duckdb
+  target: "{{ env_var('DBT_TARGET', 'dummy_target') }}"
