@@ -34,7 +34,6 @@ Usage: ./load_raw_data_databricks.py <dat_directory>
 """
 import gzip
 import os
-import shutil
 import sys
 import tempfile
 import time
@@ -139,8 +138,7 @@ def main() -> None:
 
     from databricks import sql
 
-    stage_dir = tempfile.mkdtemp(prefix="tpcds_gz_")
-    with sql.connect(
+    with tempfile.TemporaryDirectory(prefix="tpcds_gz_") as stage_dir, sql.connect(
         server_hostname=host,
         http_path=http_path,
         access_token=token,
@@ -192,7 +190,6 @@ def main() -> None:
             rows = cursor.fetchone()
             print(f"  {rows.num_inserted_rows} rows", flush=True)
 
-    shutil.rmtree(stage_dir, ignore_errors=True)
     print(f"Loaded {len(TABLES)} tables into schema '{catalog}.{SCHEMA}'.")
 
 
