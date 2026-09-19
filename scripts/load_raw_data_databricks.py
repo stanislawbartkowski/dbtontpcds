@@ -69,7 +69,13 @@ class _CountingWriter:
 
 
 def compress_in_chunks(src_path: str, stage_dir: str, table: str) -> list[str]:
-    """Gzips src_path into one or more <= MAX_CHUNK_BYTES compressed parts."""
+    """Gzips src_path into one or more <= MAX_CHUNK_BYTES compressed parts.
+
+    Each part boundary is aligned to a source line (row) boundary: COPY INTO
+    parses every chunk file as an independent CSV source, so cutting a chunk
+    mid-row would split that row into two malformed, misaligned records in
+    two different files.
+    """
     chunk_paths = []
     chunk_index = 0
 
@@ -82,17 +88,23 @@ def compress_in_chunks(src_path: str, stage_dir: str, table: str) -> list[str]:
 
     with open(src_path, "rb") as src:
         raw_file, counter, gz = open_chunk()
+        leftover = b""
         while True:
             block = src.read(READ_BLOCK_BYTES)
             if not block:
                 break
-            gz.write(block)
+            data = leftover + block
+            split_at = data.rfind(b"\n") + 1  # 0 if no newline in data yet
+            gz.write(data[:split_at])
+            leftover = data[split_at:]
             gz.flush()  # force zlib to emit buffered output so bytes_written is accurate
-            if counter.bytes_written >= MAX_CHUNK_BYTES:
+            if split_at and counter.bytes_written >= MAX_CHUNK_BYTES:
                 gz.close()
                 raw_file.close()
                 chunk_index += 1
                 raw_file, counter, gz = open_chunk()
+        if leftover:
+            gz.write(leftover)
         gz.close()
         raw_file.close()
 
