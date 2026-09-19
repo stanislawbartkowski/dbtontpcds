@@ -184,9 +184,9 @@ and record each query's execution time into an Excel report:
 - `--result-dir` (optional) — output directory (default: `result`, gitignored).
 - `RESULT_PREFIX` (optional env var, set in `.env`) — identifies the dataset
   size the run was against (e.g. `1` for the SCALE 1 dataset, a future `10`
-  for SCALE 10); defaults to `1`.
+  for SCALE 10); defaults to `1`, and selects the output subdirectory.
 
-Each run writes `result/query_{RESULT_PREFIX}_<target>_<timestamp>.xlsx`,
+Each run writes `result/<RESULT_PREFIX>/query_<target>_<timestamp>.xlsx`,
 with one row per query: `Query` (e.g. `query_1`), `Target`, and
 `Execution Time` (`HH:MM:SS`, read from dbt's `run_results.json`).
 

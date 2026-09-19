@@ -3,7 +3,7 @@
 execution time as an Excel file in the result directory.
 
 The RESULT_PREFIX environment variable (default: "1", for the SCALE 1
-dataset) is embedded in the output filename: query_{RESULT_PREFIX}_<target>_<timestamp>.xlsx
+dataset) selects the output subdirectory: result/{RESULT_PREFIX}/query_<target>_<timestamp>.xlsx
 
 Usage:
     .venv/bin/python scripts/run_all_queries.py <target> [--select queries] [--profiles-dir .] [--result-dir result]
@@ -84,10 +84,10 @@ def main() -> None:
 
     result_prefix = os.environ.get("RESULT_PREFIX", "1")
 
-    result_dir = PROJECT_ROOT / args.result_dir
-    result_dir.mkdir(exist_ok=True)
+    result_dir = PROJECT_ROOT / args.result_dir / result_prefix
+    result_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = result_dir / f"query_{result_prefix}_{args.target}_{timestamp}.xlsx"
+    out_path = result_dir / f"query_{args.target}_{timestamp}.xlsx"
     df.to_excel(out_path, index=False, engine="openpyxl")
 
     print(f"Wrote {len(df)} query timings to {out_path}")
