@@ -18,6 +18,13 @@ Each table is TRUNCATEd first and COPY INTO runs with 'force' = 'true'
 (otherwise it skips files it has already loaded once), so it's safe to
 re-run.
 
+Cloud object stores reject a single PUT over 5 GiB (S3's hard per-object
+limit for a non-multipart upload, which is what the SQL connector's
+staging PUT does), so a gzipped .dat file bigger than that is split into
+several MAX_CHUNK_BYTES-sized parts, each uploaded and staged as its own
+file under a per-table subdirectory; COPY INTO then reads the whole
+directory as one source.
+
 Connection settings come from the same environment variables dbt uses
 (source .env first): DBT_DATABRICKS_HOST, DBT_DATABRICKS_HTTP_PATH,
 DBT_DATABRICKS_TOKEN, DBT_CATALOG.
@@ -35,6 +42,8 @@ import time
 SCHEMA = "tpc_raw"
 VOLUME = "raw_stage"
 PUT_ATTEMPTS = 3
+READ_BLOCK_BYTES = 8 * 1024 * 1024
+MAX_CHUNK_BYTES = 4 * 1024**3  # stay safely under S3's 5 GiB single-PUT limit
 
 TABLES = [
     "call_center", "catalog_page", "catalog_returns", "catalog_sales", "customer",
@@ -43,6 +52,52 @@ TABLES = [
     "ship_mode", "store", "store_returns", "store_sales", "time_dim", "warehouse",
     "web_page", "web_returns", "web_sales", "web_site",
 ]
+
+
+class _CountingWriter:
+    """Tracks bytes written to the underlying (compressed) file object."""
+
+    def __init__(self, fileobj):
+        self._fileobj = fileobj
+        self.bytes_written = 0
+
+    def write(self, data: bytes) -> int:
+        self.bytes_written += len(data)
+        return self._fileobj.write(data)
+
+    def flush(self) -> None:
+        self._fileobj.flush()
+
+
+def compress_in_chunks(src_path: str, stage_dir: str, table: str) -> list[str]:
+    """Gzips src_path into one or more <= MAX_CHUNK_BYTES compressed parts."""
+    chunk_paths = []
+    chunk_index = 0
+
+    def open_chunk():
+        path = os.path.join(stage_dir, f"{table}_{chunk_index:04d}.dat.gz")
+        chunk_paths.append(path)
+        raw = open(path, "wb")
+        counter = _CountingWriter(raw)
+        return raw, counter, gzip.GzipFile(fileobj=counter, mode="wb", compresslevel=1)
+
+    with open(src_path, "rb") as src:
+        raw_file, counter, gz = open_chunk()
+        while True:
+            block = src.read(READ_BLOCK_BYTES)
+            if not block:
+                break
+            gz.write(block)
+            gz.flush()  # force zlib to emit buffered output so bytes_written is accurate
+            if counter.bytes_written >= MAX_CHUNK_BYTES:
+                gz.close()
+                raw_file.close()
+                chunk_index += 1
+                raw_file, counter, gz = open_chunk()
+        gz.close()
+        raw_file.close()
+
+    return chunk_paths
 
 
 def table_columns(cursor, table: str) -> list[tuple[str, str]]:
@@ -96,23 +151,28 @@ def main() -> None:
         volume_dir = f"/Volumes/{catalog}/{SCHEMA}/{VOLUME}"
 
         for table in TABLES:
-            gz_path = os.path.join(stage_dir, f"{table}.dat.gz")
             print(f"Compressing {table}.dat...", flush=True)
-            with open(dat_paths[table], "rb") as src, gzip.open(gz_path, "wb", compresslevel=1) as dst:
-                shutil.copyfileobj(src, dst)
+            chunk_paths = compress_in_chunks(dat_paths[table], stage_dir, table)
 
-            staged = f"{volume_dir}/{table}.dat.gz"
-            print(f"Uploading {table}.dat.gz...", flush=True)
-            for attempt in range(1, PUT_ATTEMPTS + 1):
-                try:
-                    cursor.execute(f"PUT '{gz_path}' INTO '{staged}' OVERWRITE")
-                    break
-                except sql.exc.RequestError:
-                    if attempt == PUT_ATTEMPTS:
-                        raise
-                    print(f"  upload failed (attempt {attempt}/{PUT_ATTEMPTS}), retrying...", flush=True)
-                    time.sleep(5)
-            os.remove(gz_path)
+            staged_dir = f"{volume_dir}/{table}/"
+            try:
+                cursor.execute(f"REMOVE '{staged_dir}'")
+            except sql.exc.ServerOperationError:
+                pass  # nothing staged from a previous run
+
+            for i, chunk_path in enumerate(chunk_paths, start=1):
+                chunk_name = os.path.basename(chunk_path)
+                print(f"Uploading {chunk_name} ({i}/{len(chunk_paths)})...", flush=True)
+                for attempt in range(1, PUT_ATTEMPTS + 1):
+                    try:
+                        cursor.execute(f"PUT '{chunk_path}' INTO '{staged_dir}{chunk_name}' OVERWRITE")
+                        break
+                    except sql.exc.RequestError:
+                        if attempt == PUT_ATTEMPTS:
+                            raise
+                        print(f"  upload failed (attempt {attempt}/{PUT_ATTEMPTS}), retrying...", flush=True)
+                        time.sleep(5)
+                os.remove(chunk_path)
 
             select_list = ", ".join(
                 f"CAST(_c{i} AS {data_type}) AS {name}"
@@ -123,7 +183,7 @@ def main() -> None:
             cursor.execute(
                 f"""
                 COPY INTO {table}
-                FROM (SELECT {select_list} FROM '{staged}')
+                FROM (SELECT {select_list} FROM '{staged_dir}')
                 FILEFORMAT = CSV
                 FORMAT_OPTIONS ('sep' = '|', 'header' = 'false')
                 COPY_OPTIONS ('force' = 'true')

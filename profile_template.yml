@@ -75,4 +75,3 @@ sample_project:
       catalog: "{{ env_var('DBT_CATALOG', 'main') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'tpc') }}"
       threads: 4
-  target: "{{ env_var('DBT_TARGET', 'dummy_target') }}"
