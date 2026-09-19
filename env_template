@@ -17,3 +17,4 @@ export RESULT_SIZE=1
 
 # Default dbt target (optional, defaults to dev_duckdb if unset)
 export DBT_TARGET=dev_databricks
+export SQL_ENGINE_DESCRIPTION="Custom SQL descirption added a the top of result excel"

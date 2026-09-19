@@ -182,14 +182,19 @@ and record each query's execution time into an Excel report:
   the `DBT_TARGET` environment variable if omitted.
 - `--select` (optional) — dbt `--select` expression (default: `queries`).
 - `--profiles-dir` (optional) — dbt `--profiles-dir` (default: `.`).
-- `--result-dir` (optional) — output directory (default: `result`, gitignored).
+- `--result-dir` (optional) — output directory (default: `result`, tracked in git).
 - `RESULT_SIZE` (optional env var, set in `.env`) — identifies the dataset
-  size the run was against (e.g. `1` for the SCALE 1 dataset, a future `10`
-  for SCALE 10); defaults to `1`, and selects the output subdirectory.
+  size the run was against (e.g. `1` for the SCALE 1 dataset, `10` for
+  SCALE 10); defaults to `1`, and selects the output subdirectory.
+- `SQL_ENGINE_DESCRIPTION` (optional env var, set in `.env`) — free-text
+  description of the warehouse/cluster the run used (e.g. `"Warehouse
+  serverless cluster (Cluster size = Medium)"`).
 
-Each run writes `result/<RESULT_SIZE>/query_<target>_<timestamp>.xlsx`,
-with one row per query: `Query` (e.g. `query_1`), `Target`, and
-`Execution Time` (`HH:MM:SS`, read from dbt's `run_results.json`).
+Each run writes `result/<RESULT_SIZE>/query_<target>_<timestamp>.xlsx`, with
+two info rows at the top (`SQL engine: <SQL_ENGINE_DESCRIPTION>` and `Data
+size: SCALE <RESULT_SIZE>`) followed by one row per query: `Query` (e.g.
+`query_1`), `Target`, and `Execution Time` (`HH:MM:SS`, read from dbt's
+`run_results.json`).
 
 
 ## Spark Connect

@@ -4,6 +4,8 @@ execution time as an Excel file in the result directory.
 
 The RESULT_SIZE environment variable (default: "1", for the SCALE 1
 dataset) selects the output subdirectory: result/{RESULT_SIZE}/query_<target>_<timestamp>.xlsx
+and is recorded, along with SQL_ENGINE_DESCRIPTION (optional), in two info
+rows at the top of the sheet.
 
 If <target> is omitted, it falls back to the DBT_TARGET environment variable.
 
@@ -89,12 +91,18 @@ def main() -> None:
     df = load_query_timings(target, run_results_path)
 
     result_size = os.environ.get("RESULT_SIZE", "1")
+    sql_engine_description = os.environ.get("SQL_ENGINE_DESCRIPTION", "")
 
     result_dir = PROJECT_ROOT / args.result_dir / result_size
     result_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = result_dir / f"query_{target}_{timestamp}.xlsx"
-    df.to_excel(out_path, index=False, engine="openpyxl")
+
+    with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, startrow=2, sheet_name="Sheet1")
+        sheet = writer.sheets["Sheet1"]
+        sheet.cell(row=1, column=1, value=f"SQL engine: {sql_engine_description}")
+        sheet.cell(row=2, column=1, value=f"Data size: SCALE {result_size}")
 
     print(f"Wrote {len(df)} query timings to {out_path}")
 
