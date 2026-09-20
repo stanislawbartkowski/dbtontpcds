@@ -170,8 +170,13 @@ dbt show --inline "select * from {{ref('analytics.query_1') }} "
 ### Benchmark all queries for a target
 
 Use `scripts/run_all_queries.py` to run every `models/queries/*.sql` model
-(a plain `dbt run --select queries` under the hood) against a given target
-and record each query's execution time into an Excel report:
+against a given target and record each query's actual execution time into
+an Excel report. It first runs `dbt run --select queries` to (re)create
+the query views, then runs the `benchmark_queries` macro
+(`macros/benchmark_queries.sql`), which executes `select * from <view>`
+against every one and times it - `dbt run`'s own timing only covers the
+`CREATE VIEW` statement, which is metadata-only on every engine here and
+never actually scans the underlying data.
 
 ```bash
 .venv/bin/python scripts/run_all_queries.py [target]
@@ -193,8 +198,8 @@ and record each query's execution time into an Excel report:
 Each run writes `result/<RESULT_SIZE>/query_<target>_<timestamp>.xlsx`, with
 two info rows at the top (`SQL engine: <SQL_ENGINE_DESCRIPTION>` and `Data
 size: SCALE <RESULT_SIZE>`) followed by one row per query: `Query` (e.g.
-`query_1`), `Target`, and `Execution Time` (`HH:MM:SS`, read from dbt's
-`run_results.json`).
+`query_1`), `Target`, and `Execution Time` (`HH:MM:SS`, the wall-clock time
+of that query's `select *`).
 
 
 ## Spark Connect
@@ -610,12 +615,42 @@ has already loaded once), so it's safe to re-run. At `-SCALE 1` the
 dominates the runtime.
 
 Verify the load with the source row-count tests. Each table has one
-`expect_row_count` test carrying both a SCALE 1 and a SCALE 10 expected
-count; at runtime it checks against whichever one matches `RESULT_SIZE`
-(from `.env` - `1` for SCALE 1, `10` for SCALE 10):
+`expect_row_count` test carrying a SCALE 1, SCALE 10, and SCALE 100
+expected count; at runtime it checks against whichever one matches
+`RESULT_SIZE` (from `.env`):
 
 ```bash
 .venv/bin/dbt test --target dev_databricks --select "source:*"
+```
+
+### Snapshot the raw schema by scale
+
+`tpc_raw` gets overwritten every time `load_raw_data_databricks.py` loads a
+different `-SCALE`, so re-running at a new scale destroys the previous
+one's data. Use the `copy_raw_schema` macro to snapshot the currently
+loaded scale into its own schema (`tpc_raw_<RESULT_SIZE>`) via `CREATE
+TABLE ... AS SELECT` before loading a different scale:
+
+```bash
+.venv/bin/dbt run-operation copy_raw_schema --target dev_databricks --profiles-dir .
+```
+
+Reads `RESULT_SIZE` from the environment (`source .env` first) to name the
+destination schema, e.g. `RESULT_SIZE=100` copies `tpc_raw` (25 tables) to
+`tpc_raw_100`. Databricks/Unity Catalog only. Safe to re-run - each table
+is copied with `CREATE OR REPLACE TABLE`, and logs its own copy time
+(`COPIED|<table>|<seconds>`) as it goes.
+
+This produces a frozen archive, not a queryable alternative source:
+`models/staging/sources.yml` always points at `tpc_raw`, so staging
+models, query models, and the row-count tests only ever read whatever
+scale is currently loaded there. `tpc_raw_<RESULT_SIZE>` schemas exist
+purely so a previous scale's data isn't lost when the next load overwrites
+`tpc_raw` - restoring one means copying it back, e.g.:
+
+```sql
+CREATE OR REPLACE TABLE <catalog>.tpc_raw.<table>
+AS SELECT * FROM <catalog>.tpc_raw_100.<table>
 ```
 
 ### Resources:

@@ -11,147 +11,172 @@ sources:
               arguments:
                 row_count_1: 6
                 row_count_10: 24
+                row_count_100: 30
       - name: catalog_page
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 11718
                 row_count_10: 12000
+                row_count_100: 20400
       - name: catalog_returns
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 144067
                 row_count_10: 1439749
+                row_count_100: 14404374
       - name: catalog_sales
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 1441548
                 row_count_10: 14401261
+                row_count_100: 143997065
       - name: customer
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 100000
                 row_count_10: 500000
+                row_count_100: 2000000
       - name: customer_address
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 50000
                 row_count_10: 250000
+                row_count_100: 1000000
       - name: customer_demographics
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 1920800
                 row_count_10: 1920800
+                row_count_100: 1920800
       - name: date_dim
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 73049
                 row_count_10: 73049
+                row_count_100: 73049
       - name: dbgen_version
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 1
                 row_count_10: 1
+                row_count_100: 1
       - name: household_demographics
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 7200
                 row_count_10: 7200
+                row_count_100: 7200
       - name: income_band
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 20
                 row_count_10: 20
+                row_count_100: 20
       - name: inventory
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 11745000
                 row_count_10: 133110000
+                row_count_100: 399330000
       - name: item
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 18000
                 row_count_10: 102000
+                row_count_100: 204000
       - name: promotion
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 300
                 row_count_10: 500
+                row_count_100: 1000
       - name: reason
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 75
                 row_count_10: 75
+                row_count_100: 75
       - name: ship_mode
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 20
                 row_count_10: 20
+                row_count_100: 20
       - name: store
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 12
                 row_count_10: 102
+                row_count_100: 402
       - name: store_returns
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 287514
                 row_count_10: 2875432
+                row_count_100: 28795080
       - name: store_sales
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 2880404
                 row_count_10: 28800991
+                row_count_100: 287997024
       - name: time_dim
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 86400
                 row_count_10: 86400
+                row_count_100: 86400
       - name: warehouse
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 5
                 row_count_10: 10
+                row_count_100: 15
       - name: web_page
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 60
                 row_count_10: 200
+                row_count_100: 2040
       - name: web_returns
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 71763
                 row_count_10: 719217
+                row_count_100: 7197670
       - name: web_sales
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 719384
                 row_count_10: 7197566
+                row_count_100: 72001237
       - name: web_site
         data_tests:
           - expect_row_count:
               arguments:
                 row_count_1: 30
                 row_count_10: 42
+                row_count_100: 24

@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
-"""Run all TPC-DS query models for a given dbt target and report per-query
-execution time as an Excel file in the result directory.
+"""Run all TPC-DS query models for a given dbt target and report each
+query's actual SELECT * execution time as an Excel file in the result
+directory.
+
+First runs `dbt run --select queries` to (re)create the query views, then
+runs the benchmark_queries macro (macros/benchmark_queries.sql), which
+executes `select * from <view>` against every one from a single dbt
+connection and logs its wall-clock time. This measures real query
+execution, unlike dbt run's own execution_time - for a view materialization
+(the default here), that only times the CREATE VIEW statement, which is
+metadata-only on every engine here and never scans the underlying data.
 
 The RESULT_SIZE environment variable (default: "1", for the SCALE 1
 dataset) selects the output subdirectory: result/{RESULT_SIZE}/query_<target>_<timestamp>.xlsx
@@ -14,7 +23,6 @@ Usage:
 """
 import argparse
 import datetime
-import json
 import os
 import re
 import subprocess
@@ -24,6 +32,7 @@ from pathlib import Path
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BENCHMARK_LINE = re.compile(r"BENCHMARK\|(?P<name>query_\w+)\|(?P<seconds>[\d.]+)")
 
 
 def dbt_executable() -> str:
@@ -39,7 +48,24 @@ def run_dbt(target: str, select: str, profiles_dir: str) -> None:
         "--profiles-dir", profiles_dir,
     ]
     print(f"Running: {' '.join(cmd)}")
-    subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
+    if result.returncode != 0:
+        sys.exit(f"dbt run failed (exit {result.returncode}) - fix the failing model(s) before benchmarking.")
+
+
+def run_benchmark(target: str, profiles_dir: str) -> str:
+    cmd = [
+        dbt_executable(), "run-operation", "benchmark_queries",
+        "--target", target,
+        "--profiles-dir", profiles_dir,
+    ]
+    print(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False, capture_output=True, text=True)
+    print(result.stdout)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr)
+        sys.exit(f"benchmark_queries failed (exit {result.returncode}) - a query's SELECT * likely errored; see output above.")
+    return result.stdout
 
 
 def query_sort_key(name: str):
@@ -54,18 +80,17 @@ def format_hms(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
-def load_query_timings(target: str, run_results_path: Path) -> pd.DataFrame:
-    results = json.loads(run_results_path.read_text())["results"]
-    rows = []
-    for result in results:
-        name = result["unique_id"].split(".")[-1]
-        if not name.startswith("query_"):
-            continue
-        rows.append({
-            "Query": name,
+def load_query_timings(target: str, benchmark_output: str) -> pd.DataFrame:
+    rows = [
+        {
+            "Query": m.group("name"),
             "Target": target,
-            "Execution Time": format_hms(result["execution_time"]),
-        })
+            "Execution Time": format_hms(float(m.group("seconds"))),
+        }
+        for m in BENCHMARK_LINE.finditer(benchmark_output)
+    ]
+    if not rows:
+        sys.exit("No BENCHMARK lines found in run-operation output - see above for what dbt actually printed.")
     rows.sort(key=lambda r: query_sort_key(r["Query"]))
     return pd.DataFrame(rows, columns=["Query", "Target", "Execution Time"])
 
@@ -83,12 +108,8 @@ def main() -> None:
         sys.exit("No target given and DBT_TARGET is not set - pass a target or export DBT_TARGET.")
 
     run_dbt(target, args.select, args.profiles_dir)
-
-    run_results_path = PROJECT_ROOT / "target" / "run_results.json"
-    if not run_results_path.exists():
-        sys.exit(f"No run_results.json found at {run_results_path} - dbt run may have failed to start.")
-
-    df = load_query_timings(target, run_results_path)
+    benchmark_output = run_benchmark(target, args.profiles_dir)
+    df = load_query_timings(target, benchmark_output)
 
     result_size = os.environ.get("RESULT_SIZE", "1")
     sql_engine_description = os.environ.get("SQL_ENGINE_DESCRIPTION", "")

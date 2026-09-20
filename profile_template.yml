@@ -75,3 +75,9 @@ sample_project:
       catalog: "{{ env_var('DBT_CATALOG', 'main') }}"
       schema: "{{ env_var('DBT_SCHEMA', 'tpc') }}"
       threads: 4
+      # Disables the SQL warehouse's query result cache for every connection
+      # dbt opens against this target, so benchmark timings always reflect a
+      # fresh execution instead of a cached result from an earlier identical
+      # query (forwarded as-is to databricks.sql.connect()).
+      connection_parameters:
+        use_cached_result: false
