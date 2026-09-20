@@ -9,11 +9,15 @@ and runs them against a Spark Connect server, with a few adjustments:
     Spark's TIME type ([UNSUPPORTED_TIME_TYPE])
   - table names are qualified into the `tpc_raw` database
 
-Usage: ./create_raw_schema_spark.py <tpcds_sql_path> [spark_remote_url]
-  tpcds_sql_path    Path to tpcds.sql (e.g.
-                     /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql)
-  spark_remote_url  Spark Connect remote URL (default: sc://localhost:15002)
+Connection settings come from the same environment variables the
+dev_spark dbt profile uses (source .env first): DBT_SPARK_REMOTE
+(optional, defaults to sc://localhost:15002).
+
+Usage: ./create_raw_schema_spark.py <tpcds_sql_path>
+  tpcds_sql_path  Path to tpcds.sql (e.g.
+                  /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql)
 """
+import os
 import re
 import sys
 
@@ -46,11 +50,11 @@ def parse_statements(ddl_path: str) -> list[tuple[str, str]]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <tpcds_sql_path> [spark_remote_url]", file=sys.stderr)
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <tpcds_sql_path>", file=sys.stderr)
         sys.exit(1)
     ddl_path = sys.argv[1]
-    remote_url = sys.argv[2] if len(sys.argv) > 2 else "sc://localhost:15002"
+    remote_url = os.environ.get("DBT_SPARK_REMOTE", "sc://localhost:15002")
 
     statements = parse_statements(ddl_path)
 

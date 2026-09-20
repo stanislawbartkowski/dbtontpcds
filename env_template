@@ -34,3 +34,17 @@ export DBT_POSTGRES_SCHEMA=public
 export RESULT_SIZE=1
 export DBT_TARGET=dev_postgres
 export SQL_ENGINE_DESCRIPTION="Standalone Postgres <version>, <linux distro/version>, <CPU model> (<N> vCPU) / <RAM>GB RAM"
+
+# -------------------------------
+# Spark Connect
+# -------------------------------
+
+# All optional - a local Spark Connect server needs none of this set
+# (defaults shown)
+export DBT_SPARK_HOST=localhost
+export DBT_SPARK_SCHEMA=default
+export DBT_SPARK_REMOTE=sc://localhost:15002
+
+export RESULT_SIZE=1
+export DBT_TARGET=dev_spark
+export SQL_ENGINE_DESCRIPTION="Local Spark Connect session"

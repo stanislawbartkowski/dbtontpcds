@@ -6,7 +6,6 @@ dbt_packages/
 dbt_internal_packages/
 .env
 .env_*
-profiles.yml
 *.duckdb
 .user.yml
 metastore_db/

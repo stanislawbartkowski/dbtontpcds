@@ -1,8 +1,7 @@
-# Template for profiles.yml, which is gitignored because the postgres/db2
-# targets below carry credentials. Copy this file to profiles.yml (already
-# in .gitignore) and adjust host/user/password for your environment:
-#
-#   cp profile_template.yml profiles.yml
+# Checked into the repo: every real credential below (Databricks token,
+# Postgres user/password, Spark connection details) is read from an
+# environment variable with no hardcoded default, so this file itself
+# carries no secrets - source .env (gitignored) before running dbt.
 #
 # The dev_duckdb and dev_spark targets need no setup beyond what's in the
 # README's "Spark Connect" section. The dev_postgres and dev_db2 targets
@@ -18,6 +17,14 @@
 #   export DBT_CATALOG=main   # optional, defaults to main
 #   export DBT_SCHEMA=tpc     # optional, defaults to tpc
 #
+# The dev_spark target also reads its connection settings from environment
+# variables, all optional (defaults shown - a local Spark Connect server
+# needs none of this set):
+#
+#   export DBT_SPARK_HOST=localhost
+#   export DBT_SPARK_SCHEMA=default
+#   export DBT_SPARK_REMOTE=sc://localhost:15002
+#
 # The dev_postgres target also reads its connection settings from
 # environment variables. HOST, USER, PASSWORD, and SCHEMA are required
 # (no default); only PORT and DBNAME have defaults:
@@ -31,9 +38,8 @@
 #
 # The default target below is read from DBT_TARGET - set it (e.g.
 # `export DBT_TARGET=dev_databricks`) to switch it without passing
-# --target on every dbt command. Left unset, it falls back to the
-# placeholder "dummy_target", which fails fast rather than silently
-# running against the wrong target.
+# --target on every dbt command. Left unset, it falls back to dev_duckdb,
+# which needs no credentials.
 
 sample_project:
   outputs:
@@ -44,11 +50,11 @@ sample_project:
     dev_spark:
       type: spark
       method: session
-      host: localhost
-      schema: default
+      host: "{{ env_var('DBT_SPARK_HOST', 'localhost') }}"
+      schema: "{{ env_var('DBT_SPARK_SCHEMA', 'default') }}"
       threads: 4
       server_side_parameters:
-        spark.remote: "sc://localhost:15002"
+        spark.remote: "{{ env_var('DBT_SPARK_REMOTE', 'sc://localhost:15002') }}"
     dev_postgres:
       type: postgres
       host: "{{ env_var('DBT_POSTGRES_HOST') }}"
@@ -81,3 +87,5 @@ sample_project:
       # query (forwarded as-is to databricks.sql.connect()).
       connection_parameters:
         use_cached_result: false
+  target: "{{ env_var('DBT_TARGET', 'dev_duckdb') }}"
+  

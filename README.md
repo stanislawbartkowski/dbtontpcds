@@ -18,12 +18,13 @@ virtual environment in the project root:
 The dbt connection profile lives in this project directory
 (`profiles.yml`), not in the default `~/.dbt/profiles.yml`, so pass
 `--profiles-dir .` (or `export DBT_PROFILES_DIR=$(pwd)`) when running dbt
-commands from here. `profiles.yml` is gitignored (the `dev_postgres` and
-`dev_db2` targets carry credentials), so start from the checked-in
-template:
+commands from here. `profiles.yml` is checked into the repo - every real
+credential it needs (Databricks token, Postgres user/password, etc.) is
+read from an environment variable rather than hardcoded, so copy
+`env_template` to `.env` (gitignored) and fill in real values first:
 
 ```bash
-cp profile_template.yml profiles.yml
+cp env_template .env
 ```
 
 Then verify a target connects:
@@ -245,13 +246,13 @@ Use `scripts/create_raw_schema_spark.py` to create the 25 TPC-DS tables in a
 used to set up the DuckDB `raw` schema:
 
 ```bash
-.venv/bin/python scripts/create_raw_schema_spark.py <tpcds_sql_path> [spark_remote_url]
+.venv/bin/python scripts/create_raw_schema_spark.py <tpcds_sql_path>
 ```
 
 - `<tpcds_sql_path>` (required) — path to `tpcds.sql`, e.g.
   `/home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql`
-- `[spark_remote_url]` (optional) — Spark Connect remote URL, defaults to
-  `sc://localhost:15002`
+- `DBT_SPARK_REMOTE` (optional env var, set in `.env`) — Spark Connect
+  remote URL, defaults to `sc://localhost:15002`
 
 Example:
 
@@ -271,13 +272,13 @@ Use `scripts/load_raw_data_spark.py` to load the same `.dat` files used for
 `scripts/load_raw_data.sh` into the `tpc_raw` tables created above:
 
 ```bash
-.venv/bin/python scripts/load_raw_data_spark.py <dat_directory> [spark_remote_url]
+.venv/bin/python scripts/load_raw_data_spark.py <dat_directory>
 ```
 
 - `<dat_directory>` (required) — directory containing the `.dat` files, e.g.
   `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
-- `[spark_remote_url]` (optional) — Spark Connect remote URL, defaults to
-  `sc://localhost:15002`
+- `DBT_SPARK_REMOTE` (optional env var, set in `.env`) — Spark Connect
+  remote URL, defaults to `sc://localhost:15002`
 
 Example:
 
@@ -395,10 +396,10 @@ commands against your Db2 install):
 db2 CREATE DATABASE TPC_DATA
 ```
 
-`profile_template.yml`'s `password: secret` for this target is a
-placeholder — fill in `db2inst1`'s actual OS password (set during Db2
-installation, or reset with `passwd db2inst1` as root) in `profiles.yml`
-and wherever `DB2_PASSWORD` is referenced below.
+`profiles.yml`'s `password: secret` for this target is a placeholder —
+fill in `db2inst1`'s actual OS password (set during Db2 installation, or
+reset with `passwd db2inst1` as root) in `profiles.yml` and wherever
+`DB2_PASSWORD` is referenced below.
 
 ### Make the `db2` command line available
 

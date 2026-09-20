@@ -8,9 +8,12 @@ created, including its TIME -> STRING adjustment) and the table's contents
 are overwritten from the matching pipe-delimited .dat file, so it's safe to
 re-run.
 
-Usage: ./load_raw_data_spark.py <dat_directory> [spark_remote_url]
-  dat_directory     Directory containing the *.dat files (e.g. DSGen-software-code-4.0.0/dat)
-  spark_remote_url  Spark Connect remote URL (default: sc://localhost:15002)
+Connection settings come from the same environment variables the
+dev_spark dbt profile uses (source .env first): DBT_SPARK_REMOTE
+(optional, defaults to sc://localhost:15002).
+
+Usage: ./load_raw_data_spark.py <dat_directory>
+  dat_directory  Directory containing the *.dat files (e.g. DSGen-software-code-4.0.0/dat)
 """
 import os
 import sys
@@ -27,11 +30,11 @@ TABLES = [
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <dat_directory> [spark_remote_url]", file=sys.stderr)
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <dat_directory>", file=sys.stderr)
         sys.exit(1)
     dat_dir = sys.argv[1]
-    remote_url = sys.argv[2] if len(sys.argv) > 2 else "sc://localhost:15002"
+    remote_url = os.environ.get("DBT_SPARK_REMOTE", "sc://localhost:15002")
 
     if not os.path.isdir(dat_dir):
         print(f"Error: dat directory not found: {dat_dir}", file=sys.stderr)
