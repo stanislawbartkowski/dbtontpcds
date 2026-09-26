@@ -47,6 +47,7 @@ def run_dbt(target: str, select: str, profiles_dir: str) -> None:
         "--target", target,
         "--select", select,
         "--profiles-dir", profiles_dir,
+        "--threads", "1",
     ]
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
