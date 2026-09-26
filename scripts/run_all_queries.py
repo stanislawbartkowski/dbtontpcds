@@ -33,6 +33,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_LINE = re.compile(r"BENCHMARK\|(?P<name>query_\w+)\|(?P<seconds>[\d.]+)")
+STARTING_LINE = re.compile(r"STARTING\|(?P<name>query_\w+)\|(?P<timestamp>\S+)")
 
 
 def dbt_executable() -> str:
@@ -53,6 +54,21 @@ def run_dbt(target: str, select: str, profiles_dir: str) -> None:
         sys.exit(f"dbt run failed (exit {result.returncode}) - fix the failing model(s) before benchmarking.")
 
 
+def print_progress_line(line: str) -> None:
+    """Reformat this macro's STARTING/BENCHMARK log lines into readable
+    progress output as they stream in; pass everything else through as-is
+    so warnings/errors from dbt are still visible live."""
+    m = STARTING_LINE.search(line)
+    if m:
+        print(f"Starting {m.group('name')} at {m.group('timestamp')}")
+        return
+    m = BENCHMARK_LINE.search(line)
+    if m:
+        print(f"{m.group('name')} completed - elapsed {format_hms(float(m.group('seconds')))}")
+        return
+    print(line, end="")
+
+
 def run_benchmark(target: str, profiles_dir: str) -> str:
     cmd = [
         dbt_executable(), "run-operation", "benchmark_queries",
@@ -60,12 +76,19 @@ def run_benchmark(target: str, profiles_dir: str) -> str:
         "--profiles-dir", profiles_dir,
     ]
     print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False, capture_output=True, text=True)
-    print(result.stdout)
-    if result.returncode != 0:
-        print(result.stderr, file=sys.stderr)
-        sys.exit(f"benchmark_queries failed (exit {result.returncode}) - a query's SELECT * likely errored; see output above.")
-    return result.stdout
+    process = subprocess.Popen(
+        cmd, cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    lines = []
+    for line in process.stdout:
+        lines.append(line)
+        print_progress_line(line)
+    process.wait()
+    output = "".join(lines)
+    if process.returncode != 0:
+        sys.exit(f"benchmark_queries failed (exit {process.returncode}) - a query's SELECT * likely errored; see output above.")
+    return output
 
 
 def query_sort_key(name: str):

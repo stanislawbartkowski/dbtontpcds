@@ -8,7 +8,10 @@
   queries don't pay 103x dbt process-startup overhead.
 
   Output is parsed by scripts/run_all_queries.py, which greps stdout for
-  the "BENCHMARK|<name>|<seconds>" lines this macro logs.
+  the "BENCHMARK|<name>|<seconds>" lines this macro logs. It also logs a
+  "STARTING|<name>|<timestamp>" line right before each query runs, so
+  run_all_queries.py can print live progress instead of going silent until
+  every query in the selection has finished.
 #}
 {% set query_nodes = [] %}
 {% for node in graph.nodes.values() %}
@@ -20,6 +23,7 @@
 {% for node in query_nodes %}
   {% set rel = ref(node.name) %}
   {% set start = modules.datetime.datetime.now() %}
+  {{ log('STARTING|' ~ node.name ~ '|' ~ start.isoformat(), info=True) }}
   {% do run_query('select * from ' ~ rel) %}
   {% set elapsed = (modules.datetime.datetime.now() - start).total_seconds() %}
   {{ log('BENCHMARK|' ~ node.name ~ '|' ~ elapsed, info=True) }}

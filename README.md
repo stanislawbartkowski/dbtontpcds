@@ -380,6 +380,82 @@ reader tolerates but Postgres's `COPY` rejects
 each line before streaming the data into `COPY ... FROM STDIN`. Each
 table is `TRUNCATE`d first, so it's safe to re-run.
 
+### Index the raw schema for query performance
+
+`tpcds.sql` only creates a primary key per table - one surrogate key per
+dimension table, a composite key per fact table - so every other foreign
+key a query joins on (e.g. `ss_sold_date_sk`, `cs_bill_customer_sk`) forces
+a sequential scan of the fact table. Use the `create_postgres_indexes`
+macro to add the secondary indexes the `models/queries/*.sql` models
+actually join and filter on:
+
+```bash
+.venv/bin/dbt run-operation create_postgres_indexes --target dev_postgres --profiles-dir .
+```
+
+Postgres only. Safe to re-run (`CREATE INDEX IF NOT EXISTS`). These are
+plain `CREATE INDEX`, not `CONCURRENTLY` (which can't run inside dbt's
+transaction), so expect each one to hold a lock on its table until built -
+at scale 100 this can take a while for the largest fact tables.
+
+### Backup and restore
+
+Reloading `tpc_data` from scratch at scale 100 means re-running
+`load_raw_data_postgres.sh` (hours) and `create_postgres_indexes` (another
+hour or so) - use `pg_dump`/`pg_restore` to snapshot the database instead
+so a restore is the only thing you need afterward.
+
+Directory format (`-Fd`) is worth using over the default plain-SQL dump at
+this scale - it supports parallel dump/restore (`-j`) and lets `pg_restore`
+skip/select individual objects. Check `df -h` first and point `-f` at
+whichever filesystem has enough free space (`/`, `/mnt/usb`, ...) - a
+compressed dump can still run tens of GB at scale 100:
+
+```bash
+source .env
+BACKUP_DIR="/mnt/usb/tpc_data_backup_${RESULT_SIZE:-1}"
+PGPASSWORD="$DBT_POSTGRES_PASSWORD" pg_dump \
+  -h "${DBT_POSTGRES_HOST:-localhost}" -p "${DBT_POSTGRES_PORT:-5432}" \
+  -U "$DBT_POSTGRES_USER" -d "${DBT_POSTGRES_DBNAME:-tpc_data}" \
+  -Fd -j 4 -f "$BACKUP_DIR"
+```
+
+- `-Fd` - directory format (one file per table, required for `-j`)
+- `-j 4` - dump/restore this many tables in parallel; match to available
+  CPU/disk bandwidth
+- The dump captures whatever's currently in the `raw` schema, including
+  the `create_postgres_indexes` indexes if they've been built, so a
+  restore doesn't need to rebuild them separately
+
+Restore into a new, empty database (leaves the current `tpc_data` alone):
+
+```bash
+source .env
+createdb -h "${DBT_POSTGRES_HOST:-localhost}" -p "${DBT_POSTGRES_PORT:-5432}" -U "$DBT_POSTGRES_USER" tpc_data_restored
+PGPASSWORD="$DBT_POSTGRES_PASSWORD" pg_restore \
+  -h "${DBT_POSTGRES_HOST:-localhost}" -p "${DBT_POSTGRES_PORT:-5432}" \
+  -U "$DBT_POSTGRES_USER" -d tpc_data_restored \
+  -j 4 "$BACKUP_DIR"
+```
+
+Or restore in place, dropping and recreating whatever objects already
+exist in `tpc_data` (destructive - overwrites the currently loaded data):
+
+```bash
+PGPASSWORD="$DBT_POSTGRES_PASSWORD" pg_restore \
+  -h "${DBT_POSTGRES_HOST:-localhost}" -p "${DBT_POSTGRES_PORT:-5432}" \
+  -U "$DBT_POSTGRES_USER" -d "${DBT_POSTGRES_DBNAME:-tpc_data}" \
+  --clean --if-exists -j 4 "$BACKUP_DIR"
+```
+
+At smaller scales (1, 10) a single-file compressed dump is simpler and
+doesn't need `-j` to be fast enough:
+
+```bash
+PGPASSWORD="$DBT_POSTGRES_PASSWORD" pg_dump -h ... -U "$DBT_POSTGRES_USER" -d tpc_data -Fc -f tpc_data.dump
+PGPASSWORD="$DBT_POSTGRES_PASSWORD" pg_restore -h ... -U "$DBT_POSTGRES_USER" -d tpc_data_restored tpc_data.dump
+```
+
 ## Db2
 
 The `dev_db2` target in `profiles.yml` connects to a local Db2 instance,
@@ -653,6 +729,31 @@ purely so a previous scale's data isn't lost when the next load overwrites
 CREATE OR REPLACE TABLE <catalog>.tpc_raw.<table>
 AS SELECT * FROM <catalog>.tpc_raw_100.<table>
 ```
+
+## Reclaim disk space (drop the raw tables)
+
+At scale 100 the raw tables (plus, on Postgres, the indexes from
+`create_postgres_indexes`) run well over 100 GB, and can fill the disk
+alongside the `.dat` source files used to load them. Use the
+`drop_raw_tables` macro to drop all 25 raw tables for whichever target
+you're pointed at and get that space back:
+
+```bash
+.venv/bin/dbt run-operation drop_raw_tables --target dev_postgres --profiles-dir .
+```
+
+Works against any target (`dev_duckdb`, `dev_spark`, `dev_postgres`,
+`dev_db2`, `dev_databricks`) - it resolves the raw schema/table
+qualification the same way `models/staging/sources.yml` does per
+`target.type`, so there's one macro instead of one per adapter. Swap
+`--target dev_postgres` for `--target "$DBT_TARGET"` to drop against
+whatever `DBT_TARGET` is currently set to instead of naming a target
+explicitly.
+
+Destructive - the schema is left empty afterward. Recreate the 25 tables
+from `tpcds.sql` (each target's own "Create the tables in the raw schema"
+section above, or the `create_raw_schema_*.py` scripts for Spark/
+Databricks) before loading data again.
 
 ### Resources:
 - Learn more about dbt [in the docs](https://docs.getdbt.com/docs/introduction)
