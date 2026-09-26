@@ -11,3 +11,6 @@ dbt_internal_packages/
 metastore_db/
 spark-warehouse/
 .DS_Store
+scripts/__pycache__/run_all_queries.cpython-314.pyc
+.gitignore
+profiles.yml.local.bak
