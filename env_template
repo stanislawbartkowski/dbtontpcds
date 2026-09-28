@@ -1,6 +1,12 @@
 # Copy to .env, fill in real values, then `source .env` before running dbt.
 # .env is gitignored — never commit real credentials.
 
+# Optional, used by scripts/run_all_queries.py regardless of target: per-query
+# timeout (HH:MM:SS) before a benchmarked query is cancelled and recorded as
+# TIMEOUT instead of hanging the run. Defaults to 01:00:00 if unset; override
+# per-run with --timeout instead if you don't want to change .env.
+export QUERY_TIMEOUT=01:00:00
+
 # -----------------------------
 # Databricks Unity Catalog
 # -----------------------------

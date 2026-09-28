@@ -17,7 +17,7 @@ Each query gets its own dbt invocation (rather than looping over all of
 them inside one shared connection) so that one query timing out or
 erroring can't abort the rest of the benchmark - Jinja has no try/except
 to recover from that within a single run-operation. On Postgres, the
-macro sets `statement_timeout` (--timeout, default 3600s/1h) before running
+macro sets `statement_timeout` (--timeout, default 60 minutes) before running
 the query, so a runaway query - a few TPC-DS queries are known to hang
 indefinitely on Postgres, see benchmark_queries.sql - gets cancelled
 server-side instead of blocking the run forever; this script catches that
@@ -35,7 +35,7 @@ If <target> is omitted, it falls back to the DBT_TARGET environment variable.
 
 Usage:
     .venv/bin/python scripts/run_all_queries.py [target] [--select queries] [--profiles-dir .]
-        [--result-dir result] [--exclude query_1 ...] [--timeout 3600]
+        [--result-dir result] [--exclude query_1 ...] [--timeout 60|01:00:00]
 """
 import argparse
 import datetime
@@ -99,6 +99,21 @@ def format_hms(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def parse_timeout(value: str) -> int:
+    """Accepts either a plain number of minutes (e.g. "60") or an
+    HH:MM:SS duration (e.g. "01:30:00"); returns seconds."""
+    m = re.match(r"^(\d+):(\d{2}):(\d{2})$", value)
+    if m:
+        h, mm, s = (int(g) for g in m.groups())
+        return h * 3600 + mm * 60 + s
+    try:
+        return int(value) * 60
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid timeout {value!r} - expected a number of minutes (e.g. 60) or HH:MM:SS (e.g. 01:30:00)"
+        )
+
+
 def benchmark_query(target: str, profiles_dir: str, query_name: str, timeout_seconds: int, timeout_margin: int) -> str:
     """Run one query in its own dbt process/connection. Returns the
     Execution Time cell value: an "HH:MM:SS" duration, or "TIMEOUT"."""
@@ -143,12 +158,19 @@ def main() -> None:
     parser.add_argument("--result-dir", default="result", help="output directory for the Excel report (default: result)")
     parser.add_argument("--exclude", nargs="*", default=[], metavar="QUERY",
                          help="query model name(s) to skip entirely, e.g. --exclude query_1 query_81")
-    parser.add_argument("--timeout", type=int, default=3600, metavar="SECONDS",
-                         help="per-query timeout in seconds (default: 3600 = 1h). Enforced server-side via "
-                              "Postgres statement_timeout; other adapters only get the subprocess-level backstop")
+    parser.add_argument("--timeout", type=parse_timeout, default=os.environ.get("QUERY_TIMEOUT", "01:00:00"),
+                         metavar="MINUTES|HH:MM:SS",
+                         help="per-query timeout: a number of minutes (e.g. 60) or an HH:MM:SS duration "
+                              "(e.g. 01:30:00); defaults to the QUERY_TIMEOUT env var (HH:MM:SS), or 01:00:00 "
+                              "if that's unset. Enforced server-side via Postgres statement_timeout; other "
+                              "adapters only get the subprocess-level backstop")
     parser.add_argument("--timeout-margin", type=int, default=120, metavar="SECONDS",
-                         help="extra seconds on top of --timeout before the subprocess itself is force-killed as "
-                              "a backstop, in case statement_timeout doesn't fire (default: 120)")
+                         help="extra seconds on top of --timeout before the subprocess itself is force-killed "
+                              "as a backstop, in case statement_timeout doesn't fire (default: 120)")
+    parser.add_argument("--resume", metavar="PATH",
+                         help="path to a previous run's .xlsx (e.g. from an interrupted run) - already-recorded "
+                              "queries are skipped and new results are appended to the same file instead of "
+                              "starting a fresh one")
     args = parser.parse_args()
 
     target = args.target or os.environ.get("DBT_TARGET")
@@ -157,32 +179,46 @@ def main() -> None:
 
     sys.stdout.reconfigure(line_buffering=True)
 
-    run_dbt(target, args.select, args.profiles_dir)
-    query_names = [q for q in list_query_models(target, args.select, args.profiles_dir) if q not in args.exclude]
-    query_names.sort(key=query_sort_key)
-
-    rows = []
-    for query_name in query_names:
-        execution_time = benchmark_query(target, args.profiles_dir, query_name, args.timeout, args.timeout_margin)
-        rows.append({"Query": query_name, "Target": target, "Execution Time": execution_time})
-
-    df = pd.DataFrame(rows, columns=["Query", "Target", "Execution Time"])
-
     result_size = os.environ.get("RESULT_SIZE", "1")
     sql_engine_description = os.environ.get("SQL_ENGINE_DESCRIPTION", "")
 
-    result_dir = PROJECT_ROOT / args.result_dir / result_size
-    result_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = result_dir / f"query_{target}_{timestamp}.xlsx"
+    if args.resume:
+        out_path = Path(args.resume)
+        rows = pd.read_excel(out_path, skiprows=3).to_dict("records")
+        print(f"Resuming {out_path} - {len(rows)} queries already recorded")
+    else:
+        result_dir = PROJECT_ROOT / args.result_dir / result_size
+        result_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = result_dir / f"query_{target}_{timestamp}.xlsx"
+        rows = []
 
+    already_done = {r["Query"] for r in rows}
+
+    run_dbt(target, args.select, args.profiles_dir)
+    query_names = [q for q in list_query_models(target, args.select, args.profiles_dir)
+                   if q not in args.exclude and q not in already_done]
+    query_names.sort(key=query_sort_key)
+
+    for query_name in query_names:
+        execution_time = benchmark_query(target, args.profiles_dir, query_name, args.timeout, args.timeout_margin)
+        rows.append({"Query": query_name, "Target": target, "Execution Time": execution_time})
+        # Written after every query (not just at the end) so a killed/crashed run
+        # - a real risk over a many-hour, 100+-query run - still leaves a report
+        # with whatever completed so far instead of losing everything.
+        write_excel(rows, out_path, result_size, sql_engine_description, args.timeout)
+
+    print(f"Wrote {len(rows)} query timings to {out_path}")
+
+
+def write_excel(rows: list[dict], out_path: Path, result_size: str, sql_engine_description: str, timeout_seconds: int) -> None:
+    df = pd.DataFrame(rows, columns=["Query", "Target", "Execution Time"])
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, startrow=2, sheet_name="Sheet1")
+        df.to_excel(writer, index=False, startrow=3, sheet_name="Sheet1")
         sheet = writer.sheets["Sheet1"]
         sheet.cell(row=1, column=1, value=f"SQL engine: {sql_engine_description}")
         sheet.cell(row=2, column=1, value=f"Data size: SCALE {result_size}")
-
-    print(f"Wrote {len(df)} query timings to {out_path}")
+        sheet.cell(row=3, column=1, value=f"Per-query timeout: {format_hms(timeout_seconds)}")
 
 
 if __name__ == "__main__":
