@@ -3,7 +3,8 @@
 query's actual SELECT * execution time as an Excel file in the result
 directory.
 
-First runs `dbt run --select queries` to (re)create the query views. Then,
+First runs `dbt run --select staging queries` to (re)create the staging and
+query views. Then,
 for each query model, runs the benchmark_one_query macro
 (macros/benchmark_queries.sql) - one dbt run-operation invocation per
 query, each its own connection/transaction - which executes
@@ -21,10 +22,12 @@ macro sets `statement_timeout` (--timeout, default 60 minutes) before running
 the query, so a runaway query - a few TPC-DS queries are known to hang
 indefinitely on Postgres, see benchmark_queries.sql - gets cancelled
 server-side instead of blocking the run forever; this script catches that
-and records "TIMEOUT" for the query instead of a time. A --timeout-margin
-(default 120s) on top of --timeout backstops non-Postgres targets, which
-don't get the statement_timeout enforcement (killing the subprocess can't
-cancel the query server-side there, only abandon it).
+and records "TIMEOUT" for the query instead of a time. Every query also
+runs under the `timeout` command at --timeout plus --timeout-margin
+(default 120s), which is what enforces the limit on other targets. Killing
+the dbt client doesn't stop its query on a Spark Connect server, so on
+Spark targets the script then kills the orphaned jobs through the Spark UI
+(--spark-ui-url); on other non-Postgres targets the query is abandoned.
 
 The RESULT_SIZE environment variable (default: "1", for the SCALE 1
 dataset) selects the output subdirectory: result/{RESULT_SIZE}/query_<target>_<timestamp>.xlsx
@@ -44,6 +47,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 import pandas as pd
@@ -62,7 +67,9 @@ def run_dbt(target: str, select: str, profiles_dir: str) -> None:
     cmd = [
         dbt_executable(), "run",
         "--target", target,
-        "--select", select,
+        # staging too, not just the query views: they select from the staging
+        # views, which don't exist yet on a freshly loaded target.
+        "--select", "staging", select,
         "--profiles-dir", profiles_dir,
         "--threads", "1",
     ]
@@ -114,27 +121,53 @@ def parse_timeout(value: str) -> int:
         )
 
 
-def benchmark_query(target: str, profiles_dir: str, query_name: str, timeout_seconds: int, timeout_margin: int) -> str:
+def kill_running_spark_jobs(spark_ui_url: str) -> None:
+    """Kill every running job on the Spark Connect server via its UI.
+
+    Killing the dbt client doesn't stop its query on a Spark Connect server
+    (dbt-spark's session cancel() is a no-op), so a timed-out query would keep
+    competing with the next one. The benchmark runs one query at a time, so
+    anything still running at this point is the orphan."""
+    try:
+        with urllib.request.urlopen(f"{spark_ui_url}/api/v1/applications", timeout=10) as r:
+            apps = json.load(r)
+        for app in apps:
+            with urllib.request.urlopen(f"{spark_ui_url}/api/v1/applications/{app['id']}/jobs?status=running", timeout=10) as r:
+                jobs = json.load(r)
+            for job in jobs:
+                req = urllib.request.Request(f"{spark_ui_url}/jobs/job/kill/?id={job['jobId']}", method="POST")
+                urllib.request.urlopen(req, timeout=10).close()
+                print(f"  killed orphaned Spark job {job['jobId']}")
+    except OSError as exc:
+        print(f"  could not kill orphaned Spark jobs via {spark_ui_url}: {exc}", file=sys.stderr)
+
+
+def benchmark_query(target: str, profiles_dir: str, query_name: str, timeout_seconds: int, timeout_margin: int,
+                    spark_ui_url: str) -> str:
     """Run one query in its own dbt process/connection. Returns the
-    Execution Time cell value: an "HH:MM:SS" duration, or "TIMEOUT"."""
+    Execution Time cell value: an "HH:MM:SS" duration, "TIMEOUT", or "ERROR"."""
+    limit = timeout_seconds + timeout_margin
     cmd = [
+        # SIGINT first so dbt shuts down as on Ctrl-C; SIGKILL 30s later if it hasn't.
+        "timeout", "-s", "INT", "-k", "30", str(limit),
         dbt_executable(), "run-operation", "benchmark_one_query",
         "--target", target,
         "--profiles-dir", profiles_dir,
         "--args", json.dumps({"query_name": query_name, "timeout_seconds": timeout_seconds}),
     ]
     print(f"Starting {query_name}")
-    try:
-        result = subprocess.run(
-            cmd, cwd=PROJECT_ROOT, capture_output=True, text=True,
-            timeout=timeout_seconds + timeout_margin,
-        )
-    except subprocess.TimeoutExpired:
-        print(f"{query_name} TIMEOUT - subprocess exceeded {timeout_seconds + timeout_margin}s (statement_timeout backstop)")
-        return "TIMEOUT"
+    start = time.monotonic()
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
+    elapsed_wall = time.monotonic() - start
 
     output = result.stdout + result.stderr
     print(output, end="")
+
+    if result.returncode in (124, 137) and elapsed_wall >= limit:
+        print(f"{query_name} TIMEOUT - killed by timeout after {limit}s")
+        if "Registered adapter: spark" in output:
+            kill_running_spark_jobs(spark_ui_url)
+        return "TIMEOUT"
 
     m = BENCHMARK_LINE.search(output)
     if m:
@@ -165,8 +198,11 @@ def main() -> None:
                               "if that's unset. Enforced server-side via Postgres statement_timeout; other "
                               "adapters only get the subprocess-level backstop")
     parser.add_argument("--timeout-margin", type=int, default=120, metavar="SECONDS",
-                         help="extra seconds on top of --timeout before the subprocess itself is force-killed "
-                              "as a backstop, in case statement_timeout doesn't fire (default: 120)")
+                         help="extra seconds on top of --timeout before the `timeout` command stops the dbt "
+                              "process, so Postgres's own statement_timeout gets to fire first (default: 120)")
+    parser.add_argument("--spark-ui-url", default=os.environ.get("SPARK_UI_URL", "http://localhost:4040"),
+                         help="Spark UI used to kill a timed-out query's orphaned jobs on Spark targets "
+                              "(default: $SPARK_UI_URL or http://localhost:4040)")
     parser.add_argument("--resume", metavar="PATH",
                          help="path to a previous run's .xlsx (e.g. from an interrupted run) - already-recorded "
                               "queries are skipped and new results are appended to the same file instead of "
@@ -201,7 +237,8 @@ def main() -> None:
     query_names.sort(key=query_sort_key)
 
     for query_name in query_names:
-        execution_time = benchmark_query(target, args.profiles_dir, query_name, args.timeout, args.timeout_margin)
+        execution_time = benchmark_query(target, args.profiles_dir, query_name, args.timeout, args.timeout_margin,
+                                         args.spark_ui_url)
         rows.append({"Query": query_name, "Target": target, "Execution Time": execution_time})
         # Written after every query (not just at the end) so a killed/crashed run
         # - a real risk over a many-hour, 100+-query run - still leaves a report

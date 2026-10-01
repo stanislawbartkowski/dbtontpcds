@@ -14,3 +14,4 @@ spark-warehouse/
 scripts/__pycache__/run_all_queries.cpython-314.pyc
 .gitignore
 profiles.yml.local.bak
+derby.log
