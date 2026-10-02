@@ -47,6 +47,11 @@ sample_project:
       type: duckdb
       path: dev.duckdb
       threads: 4
+      # DuckDB defaults to 80% of RAM, which leaves too little headroom on a
+      # shared box: at SCALE 100 the kernel OOM-killed queries (query_23a/b)
+      # before DuckDB hit its own limit. Below that, it spills to disk instead.
+      settings:
+        memory_limit: "{{ env_var('DBT_DUCKDB_MEMORY_LIMIT', '8GB') }}"
     dev_spark:
       type: spark
       method: session
