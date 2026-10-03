@@ -64,3 +64,20 @@ export SQL_ENGINE_DESCRIPTION="Local Spark Connect session"
 export RESULT_SIZE=10
 export DBT_TARGET=dev_duckdb
 export SQL_ENGINE_DESCRIPTION="DuckDB 1.5.5 (embedded), Ubuntu 26.04, Intel i5-6300U (4 vCPU) / 14GB RAM"
+
+# -------------------------------
+# Db2
+# -------------------------------
+
+# USER and PASSWORD required; HOST, PORT, DATABASE, SCHEMA optional
+# (default to localhost, 25000, TPC_DATA and TPC)
+export DBT_DB2_HOST=localhost
+export DBT_DB2_PORT=25000
+export DBT_DB2_DATABASE=TPC_DATA
+export DBT_DB2_USER=db2inst1
+export DBT_DB2_PASSWORD=<password>
+export DBT_DB2_SCHEMA=TPC
+
+export RESULT_SIZE=1
+export DBT_TARGET=dev_db2
+export SQL_ENGINE_DESCRIPTION="Db2 <version>, <linux distro/version>, <CPU model> (<N> vCPU) / <RAM>GB RAM"

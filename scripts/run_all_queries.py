@@ -63,20 +63,43 @@ def dbt_executable() -> str:
     return str(candidate) if candidate.exists() else "dbt"
 
 
-def run_dbt(target: str, select: str, profiles_dir: str) -> None:
+def run_dbt_step(command: str, target: str, select: str, profiles_dir: str) -> str:
     cmd = [
-        dbt_executable(), "run",
+        dbt_executable(), command,
         "--target", target,
-        # staging too, not just the query views: they select from the staging
-        # views, which don't exist yet on a freshly loaded target.
-        "--select", "staging", select,
+        "--select", select,
         "--profiles-dir", profiles_dir,
         "--threads", "1",
     ]
     print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT, check=False)
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
+    print(result.stdout + result.stderr, end="")
     if result.returncode != 0:
-        sys.exit(f"dbt run failed (exit {result.returncode}) - fix the failing model(s) before benchmarking.")
+        sys.exit(f"dbt {command} failed (exit {result.returncode}) - fix the failing model(s) before benchmarking.")
+    return result.stdout
+
+
+def prepare_target(target: str, select: str, profiles_dir: str) -> str:
+    """Build the staging views (the query models select from them, and they
+    don't exist yet on a freshly loaded target), then build the query views.
+    Returns the target's adapter type.
+
+    On Db2 the query models are tables, not views (Db2 rejects ORDER BY in a
+    view over a CTE), so `dbt run` would execute every query in full, with
+    no timeout, and the benchmark would then only time reading the stored
+    result. There they're compiled instead, and benchmark_query runs the
+    compiled SQL directly."""
+    m = re.search(r"Registered adapter: (\w+)=", run_dbt_step("run", target, "staging", profiles_dir))
+    adapter = m.group(1) if m else ""
+    run_dbt_step("compile" if adapter == "ibmdb2" else "run", target, select, profiles_dir)
+    return adapter
+
+
+def compiled_sql(query_name: str) -> str:
+    matches = list((PROJECT_ROOT / "target" / "compiled").glob(f"*/models/**/{query_name}.sql"))
+    if not matches:
+        sys.exit(f"no compiled SQL found for {query_name} under target/compiled - did dbt compile run?")
+    return matches[0].read_text()
 
 
 def list_query_models(target: str, select: str, profiles_dir: str) -> list[str]:
@@ -142,18 +165,53 @@ def kill_running_spark_jobs(spark_ui_url: str) -> None:
         print(f"  could not kill orphaned Spark jobs via {spark_ui_url}: {exc}", file=sys.stderr)
 
 
+def force_db2_applications() -> None:
+    """Force off the timed-out query's Db2 connection.
+
+    Like Spark Connect, Db2 keeps running a query after its dbt client is
+    killed. dbt connects through ibm_db, which shows up as application
+    `python`; the benchmark runs one query at a time, so any other `python`
+    connection of this user is the orphan. Uses the same DBT_DB2_* env vars
+    as the dev_db2 profile."""
+    import ibm_db
+    e = os.environ
+    try:
+        conn = ibm_db.connect(
+            f"DATABASE={e.get('DBT_DB2_DATABASE', 'TPC_DATA')};HOSTNAME={e.get('DBT_DB2_HOST', 'localhost')};"
+            f"PORT={e.get('DBT_DB2_PORT', '25000')};PROTOCOL=TCPIP;UID={e['DBT_DB2_USER']};PWD={e['DBT_DB2_PASSWORD']};",
+            "", "")
+        stmt = ibm_db.exec_immediate(conn, (
+            "select application_handle from table(mon_get_connection(null, -2)) "
+            "where application_name = 'python' and system_auth_id = upper(current user) "
+            "and application_handle <> mon_get_application_handle()"))
+        handles = []
+        row = ibm_db.fetch_tuple(stmt)
+        while row:
+            handles.append(row[0])
+            row = ibm_db.fetch_tuple(stmt)
+        for h in handles:
+            ibm_db.exec_immediate(conn, f"call sysproc.admin_cmd('force application ({h})')")
+            print(f"  forced off orphaned Db2 connection {h}")
+        ibm_db.close(conn)
+    except Exception as exc:
+        print(f"  could not force off orphaned Db2 connections: {exc}", file=sys.stderr)
+
+
 def benchmark_query(target: str, profiles_dir: str, query_name: str, timeout_seconds: int, timeout_margin: int,
-                    spark_ui_url: str) -> str:
+                    spark_ui_url: str, adapter: str) -> str:
     """Run one query in its own dbt process/connection. Returns the
     Execution Time cell value: an "HH:MM:SS" duration, "TIMEOUT", or "ERROR"."""
     limit = timeout_seconds + timeout_margin
+    args = {"query_name": query_name, "timeout_seconds": timeout_seconds}
+    if adapter == "ibmdb2":
+        args["sql"] = compiled_sql(query_name)
     cmd = [
         # SIGINT first so dbt shuts down as on Ctrl-C; SIGKILL 30s later if it hasn't.
         "timeout", "-s", "INT", "-k", "30", str(limit),
         dbt_executable(), "run-operation", "benchmark_one_query",
         "--target", target,
         "--profiles-dir", profiles_dir,
-        "--args", json.dumps({"query_name": query_name, "timeout_seconds": timeout_seconds}),
+        "--args", json.dumps(args),
     ]
     print(f"Starting {query_name}")
     start = time.monotonic()
@@ -163,10 +221,13 @@ def benchmark_query(target: str, profiles_dir: str, query_name: str, timeout_sec
     output = result.stdout + result.stderr
     print(output, end="")
 
-    if result.returncode in (124, 137) and elapsed_wall >= limit:
+    # 124: dbt exited after SIGINT; 137/-9: it needed the SIGKILL.
+    if result.returncode in (124, 137, -9) and elapsed_wall >= limit:
         print(f"{query_name} TIMEOUT - killed by timeout after {limit}s")
-        if "Registered adapter: spark" in output:
+        if adapter == "spark":
             kill_running_spark_jobs(spark_ui_url)
+        elif adapter == "ibmdb2":
+            force_db2_applications()
         return "TIMEOUT"
 
     m = BENCHMARK_LINE.search(output)
@@ -231,14 +292,14 @@ def main() -> None:
 
     already_done = {r["Query"] for r in rows}
 
-    run_dbt(target, args.select, args.profiles_dir)
+    adapter = prepare_target(target, args.select, args.profiles_dir)
     query_names = [q for q in list_query_models(target, args.select, args.profiles_dir)
                    if q not in args.exclude and q not in already_done]
     query_names.sort(key=query_sort_key)
 
     for query_name in query_names:
         execution_time = benchmark_query(target, args.profiles_dir, query_name, args.timeout, args.timeout_margin,
-                                         args.spark_ui_url)
+                                         args.spark_ui_url, adapter)
         rows.append({"Query": query_name, "Target": target, "Execution Time": execution_time})
         # Written after every query (not just at the end) so a killed/crashed run
         # - a real risk over a many-hour, 100+-query run - still leaves a report

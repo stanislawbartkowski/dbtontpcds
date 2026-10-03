@@ -36,6 +36,17 @@
 #   export DBT_POSTGRES_DBNAME=tpc_data       # optional, defaults to tpc_data
 #   export DBT_POSTGRES_SCHEMA=<schema>
 #
+# The dev_db2 target also reads its connection settings from environment
+# variables. USER and PASSWORD are required (no default); the rest have
+# defaults:
+#
+#   export DBT_DB2_HOST=localhost             # optional, defaults to localhost
+#   export DBT_DB2_PORT=25000                 # optional, defaults to 25000
+#   export DBT_DB2_DATABASE=TPC_DATA          # optional, defaults to TPC_DATA
+#   export DBT_DB2_USER=<user>
+#   export DBT_DB2_PASSWORD=<password>
+#   export DBT_DB2_SCHEMA=TPC                 # optional, defaults to TPC
+#
 # The default target below is read from DBT_TARGET - set it (e.g.
 # `export DBT_TARGET=dev_databricks`) to switch it without passing
 # --target on every dbt command. Left unset, it falls back to dev_duckdb,
@@ -71,12 +82,12 @@ sample_project:
       threads: 4
     dev_db2:
       type: ibmdb2
-      host: localhost
-      port: 25000
-      database: TPC_DATA
-      user: db2inst1
-      password: secret
-      schema: TPC
+      host: "{{ env_var('DBT_DB2_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_DB2_PORT', '25000') | int }}"
+      database: "{{ env_var('DBT_DB2_DATABASE', 'TPC_DATA') }}"
+      user: "{{ env_var('DBT_DB2_USER') }}"
+      password: "{{ env_var('DBT_DB2_PASSWORD') }}"
+      schema: "{{ env_var('DBT_DB2_SCHEMA', 'TPC') }}"
       threads: 4
     dev_databricks:
       type: databricks

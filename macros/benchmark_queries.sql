@@ -1,5 +1,10 @@
-{% macro benchmark_one_query(query_name, timeout_seconds=3600) %}
+{% macro benchmark_one_query(query_name, timeout_seconds=3600, sql=none) %}
 {#
+  `sql`, if given, is run instead of `select * from <view>`. On Db2 the
+  query models are tables (Db2 rejects ORDER BY in a view over a CTE), so
+  selecting from them would only time reading the stored result -
+  scripts/run_all_queries.py passes the model's compiled SQL instead.
+
   Runs `select * from <view>` for a single query_* model and logs its
   wall-clock time as a "BENCHMARK|<name>|<seconds>" line, unlike `dbt
   run`'s own execution_time (which only times the CREATE VIEW statement -
@@ -33,9 +38,9 @@
 {% if target.type == 'postgres' %}
   {% do run_query("set statement_timeout = '" ~ (timeout_seconds * 1000) ~ "'") %}
 {% endif %}
-{% set rel = ref(query_name) %}
+{% set stmt = sql if sql else 'select * from ' ~ ref(query_name) %}
 {% set start = modules.datetime.datetime.now() %}
-{% do run_query('select * from ' ~ rel) %}
+{% do run_query(stmt) %}
 {% set elapsed = (modules.datetime.datetime.now() - start).total_seconds() %}
 {{ log('BENCHMARK|' ~ query_name ~ '|' ~ elapsed, info=True) }}
 {% endmacro %}

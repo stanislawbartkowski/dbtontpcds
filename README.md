@@ -472,10 +472,13 @@ commands against your Db2 install):
 db2 CREATE DATABASE TPC_DATA
 ```
 
-`profiles.yml`'s `password: secret` for this target is a placeholder —
-fill in `db2inst1`'s actual OS password (set during Db2 installation, or
-reset with `passwd db2inst1` as root) in `profiles.yml` and wherever
-`DB2_PASSWORD` is referenced below.
+The target reads its connection settings from `DBT_DB2_*` environment
+variables, like `dev_postgres` - set them in `.env` (copied from
+`env_template`). `DBT_DB2_USER` and `DBT_DB2_PASSWORD` are required: the
+user is `db2inst1` and the password is its OS password (set during Db2
+installation, or reset with `passwd db2inst1` as root). `DBT_DB2_HOST`,
+`DBT_DB2_PORT`, `DBT_DB2_DATABASE` and `DBT_DB2_SCHEMA` default to
+`localhost`, `25000`, `TPC_DATA` and `TPC`.
 
 ### Make the `db2` command line available
 
@@ -525,7 +528,8 @@ CREATE SCHEMA raw;
 SET SCHEMA raw;
 EOF
 
-db2 CONNECT TO TPC_DATA USER db2inst1 USING secret
+source .env
+db2 CONNECT TO "$DBT_DB2_DATABASE" USER "$DBT_DB2_USER" USING "$DBT_DB2_PASSWORD"
 db2 -tvf /tmp/load_raw_db2.sql
 db2 -tvf /home/dbt/tpc/DSGen-software-code-4.0.0/tools/tpcds.sql
 db2 CONNECT RESET
@@ -553,9 +557,9 @@ Use `scripts/load_raw_data_db2.sh` to load the same `.dat` files used for
 - `<dat_directory>` (required) — directory containing the `.dat` files,
   e.g. `/home/dbt/tpc/DSGen-software-code-4.0.0/dat`
 - `[db2_database]` (optional) — Db2 database alias to connect to,
-  defaults to `TPC_DATA` (the `dev_db2` profile target); the connection
-  user/password come from the `DB2_USER`/`DB2_PASSWORD` env vars,
-  defaulting to `db2inst1`/`secret`
+  defaults to `DBT_DB2_DATABASE` or `TPC_DATA`; the connection
+  user/password come from the same `DBT_DB2_USER`/`DBT_DB2_PASSWORD` env
+  vars the `dev_db2` profile target reads (`source .env` first)
 
 Example:
 
@@ -563,17 +567,20 @@ Example:
 ./scripts/load_raw_data_db2.sh /home/dbt/tpc/DSGen-software-code-4.0.0/dat
 ```
 
-Like Postgres's `COPY`, Db2's `IMPORT` rejects the trailing `|` at the
-end of each row dsdgen emits, so the script strips it from each line
-before importing (via a stripped copy in a temp directory, since
-`IMPORT` reads from a file rather than stdin). Each table is
-`TRUNCATE`d first, so it's safe to re-run. `IMPORT` commits every 10000
-rows to avoid filling the transaction log on the larger fact tables at
-higher `-SCALE` factors.
+The script uses Db2's `LOAD` utility, which writes pages directly
+instead of inserting row by row like `IMPORT`: SCALE 10 loads in about
+16 minutes, where `IMPORT` managed roughly 17,000 rows/s (hours at SCALE
+10, more than a day at SCALE 100). `LOAD` runs on the Db2 server and
+reads the `.dat` files there, so the directory must be readable by the
+instance owner (`db2inst1`). It accepts the trailing `|` dsdgen ends each
+row with, so no stripped copy is needed. Each table is loaded with
+`REPLACE`, so it's safe to re-run, and `NONRECOVERABLE`, so the table
+spaces aren't left in backup-pending state. The script stops if any row
+is rejected.
 
-Caveat: like the rest of this Db2 section, this script hasn't been run
-or verified against a live Db2 instance in this environment — check its
-behavior against your Db2 install.
+`LOAD` doesn't update optimizer statistics, so the script runs
+`RUNSTATS` on every table afterwards; without them Db2 plans as if the
+tables were nearly empty.
 
 ### Query models
 
